@@ -218,7 +218,7 @@ export class Match {
   startMatch() {
     this.resetMatchState();
     for (const p of this.players.values()) {
-      Object.assign(p, { kills: 0, deaths: 0, assists: 0, mvps: 0, score: 0, money: ECON.START, survived: false });
+      Object.assign(p, { kills: 0, deaths: 0, assists: 0, mvps: 0, score: 0, money: ECON.START, survived: false, loadout: { primary: null, secondary: null } });
     }
     if (this.ffa) {
       this.round = 1;
@@ -322,7 +322,8 @@ export class Match {
       p.ammo = {};
     } else if (resetGear) {
       p.armor = 0; p.helmet = false;
-      p.weapons = { primary: DEFAULT_PRIMARY, secondary: 'udder9', grenades: [], bomb: false, kit: false };
+      const owned = (id) => id && WEAPONS[id] && (WEAPONS[id].team === 'any' || WEAPONS[id].team === p.team) ? id : null;
+      p.weapons = { primary: owned(p.loadout.primary) || DEFAULT_PRIMARY, secondary: owned(p.loadout.secondary) || 'udder9', grenades: [], bomb: false, kit: false };
       p.ammo = {};
     }
     if (p.team !== 'CT') p.weapons.kit = false;
@@ -392,6 +393,7 @@ export class Match {
       p.team = p.team === 'T' ? 'CT' : 'T';
       p.money = ECON.START;
       p.survived = false;
+      p.loadout = { primary: null, secondary: null };
     }
     this.score = { T: this.score.CT, CT: this.score.T };
     this.lossStreak = { T: 0, CT: 0 };
@@ -505,7 +507,7 @@ export class Match {
       if (p.weapons[w.slot] === item) return false;
       if (p.money < price) return false;
       p.money -= price;
-      if (this.ffa) p.loadout[w.slot] = item; // bought guns stay with you across respawns
+      p.loadout[w.slot] = item; // bought guns stay with you even if you die (until halftime / match end)
       p.weapons[w.slot] = item;
       p.ammo[item] = [w.mag, w.reserve];
       p.active = item;
