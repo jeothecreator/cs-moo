@@ -13,6 +13,7 @@ import { Effects } from './effects.js';
 import { Net } from './net.js';
 import { labelTexture } from './textures.js';
 import { weaponLabel } from './hud.js';
+import { Obby } from './obby.js';
 
 const TAU = Math.PI * 2;
 const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
@@ -186,7 +187,16 @@ export class Game {
     return welcome;
   }
 
+  startObby() {
+    this.resetState();
+    this.obby ??= new Obby(this);
+    this.mode = 'obby';
+    this.hud.show(false);
+    this.obby.start();
+  }
+
   leave() {
+    if (this.obby?.active) this.obby.stop();
     this.net?.close();
     this.net = null;
     for (const e of this.entities.values()) this.scene.remove(e.model.root);
@@ -214,7 +224,8 @@ export class Game {
   // ─── Input ─────────────────────────────────────────────────
   bindInput() {
     document.addEventListener('pointerlockchange', () => {
-      if (this.mode !== 'playing') return;
+      if (this.mode !== 'playing' && this.mode !== 'obby') return;
+      if (this.mode === 'obby' && this.obby?.finished && !this.locked) return;
       if (this.locked) {
         document.getElementById('pause').hidden = true;
         document.getElementById('clickToPlay').hidden = true;
@@ -240,9 +251,10 @@ export class Game {
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
-      if (this.mode !== 'playing') return;
+      if (this.mode !== 'playing' && this.mode !== 'obby') return;
       this.audio.init();
       if (!this.locked) { this.lockPointer(); return; }
+      if (this.mode === 'obby') return;
       if (e.button === 0) { this.mouse.left = true; this.onPrimaryDown(); }
       if (e.button === 2) { this.mouse.right = true; this.onSecondaryDown(); }
     });
@@ -257,6 +269,13 @@ export class Game {
     });
 
     document.addEventListener('keydown', (e) => {
+      if (this.mode === 'obby') {
+        if (!this.locked) return;
+        this.keys.add(e.code);
+        if (e.code === 'Space') this.jumpQueued = performance.now();
+        if (e.code === 'KeyR' && !e.repeat) this.obby.respawn(true);
+        return;
+      }
       if (this.mode !== 'playing' || this.hud.chatOpen) return;
       if (e.code === 'Tab') { e.preventDefault(); this.showScores = true; return; }
       if (this.uiOpen === 'buy') {
@@ -1112,6 +1131,13 @@ export class Game {
 
     this.world.update(dt);
     this.effects.update(dt);
+
+    if (this.mode === 'obby') {
+      this.obby.update(dt);
+      this.renderer.clear();
+      this.renderer.render(this.obby.scene, this.camera);
+      return;
+    }
 
     if (this.mode === 'menu') {
       this.menuAngle += dt * 0.05;

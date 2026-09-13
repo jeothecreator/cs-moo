@@ -2,6 +2,7 @@
 import { WEAPONS, UTIL } from '/shared/constants.js';
 import { MODES } from '/shared/map.js';
 import { Game } from './game.js';
+import { formatRunTime } from './obby.js';
 import { HUD } from './hud.js';
 import { AudioEngine } from './audio.js';
 
@@ -137,12 +138,16 @@ $('nameInput').value = localStorage.getItem('csmoo.name') || '';
 const urlCode = new URLSearchParams(location.search).get('code');
 if (urlCode) $('codeInput').value = urlCode.toUpperCase();
 
-let mode = localStorage.getItem('csmoo.mode') === 'ffa' ? 'ffa' : 'defusal';
+const savedMode = localStorage.getItem('csmoo.mode');
+let mode = ['ffa', 'duel', 'obby'].includes(savedMode) ? savedMode : 'defusal';
 function selectMode(m, { preview = true } = {}) {
-  mode = MODES[m] ? m : 'defusal';
+  mode = m === 'obby' || MODES[m] ? m : 'defusal';
   document.querySelectorAll('.mode-card').forEach((x) => x.classList.toggle('selected', x.dataset.mode === mode));
   document.querySelector('#menu .team-pick').hidden = mode !== 'defusal';
-  if (preview) game.loadMap(MODES[mode].map);
+  $('mpActions').hidden = mode === 'obby';
+  $('obbyActions').hidden = mode !== 'obby';
+  if (mode === 'obby') updateObbyBest();
+  if (preview && MODES[mode]) game.loadMap(MODES[mode].map);
   try { localStorage.setItem('csmoo.mode', mode); } catch { /* storage unavailable */ }
 }
 document.querySelectorAll('.mode-card').forEach((c) => c.addEventListener('click', () => {
@@ -237,6 +242,26 @@ $('copyInvite').addEventListener('click', async () => {
   setTimeout(() => { btn.textContent = 'Copy invite link'; }, 1800);
 });
 
+// ─── Solo obby ─────────────────────────────────────────────────
+function updateObbyBest() {
+  const best = Number(localStorage.getItem('csmoo.obbyBest'));
+  $('obbyBestMenu').textContent = best ? formatRunTime(best) : 'No run yet';
+}
+
+$('obbyBtn').addEventListener('click', () => {
+  audio.init();
+  $('menuError').textContent = '';
+  document.body.classList.add('obby');
+  game.startObby();
+  $('menu').hidden = true;
+  $('clickToPlay').hidden = false;
+});
+$('obAgain').addEventListener('click', () => {
+  game.obby.restart();
+  game.lockPointer();
+});
+$('obMenu').addEventListener('click', () => backToMenu());
+
 $('clickToPlay').addEventListener('click', () => {
   audio.init();
   $('clickToPlay').hidden = true;
@@ -257,6 +282,8 @@ pauseObserver.observe($('pause'), { attributes: true, attributeFilter: ['hidden'
 
 function backToMenu(reason) {
   game.leave();
+  document.body.classList.remove('obby');
+  updateObbyBest();
   for (const id of ['pause', 'teamSelect', 'clickToPlay', 'buymenu', 'scoreboard', 'matchEnd']) $(id).hidden = true;
   $('menu').hidden = false;
   if (reason) $('menuError').textContent = reason;

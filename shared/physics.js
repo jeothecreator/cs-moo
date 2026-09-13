@@ -116,7 +116,13 @@ export function stepBody(s, input, dtTotal, boxes = MAP.boxes) {
         s.jumped = true;
       }
     } else {
-      accelerate(s, nx, nz, Math.min(maxSpeed * wishLen, PLAYER.AIR_WISH), PLAYER.AIR_ACCEL, dt);
+      if (input.airControl) {
+        // platformer-style steering (solo obby)
+        accelerate(s, nx, nz, maxSpeed * wishLen, 12, dt);
+        if (wishLen === 0) { const k = Math.max(0, 1 - 2.5 * dt); s.vx *= k; s.vz *= k; }
+      } else {
+        accelerate(s, nx, nz, Math.min(maxSpeed * wishLen, PLAYER.AIR_WISH), PLAYER.AIR_ACCEL, dt);
+      }
       // soft cap on bunny-hop speed
       const hs = Math.hypot(s.vx, s.vz);
       const cap = PLAYER.SPEED * 1.45;
