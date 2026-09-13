@@ -81,6 +81,17 @@ const barnyard = {
     box(12, 15, -22, -20.5, 1.2, 'hay'),
     box(-2, 2, -36, -34, 1, 'crate'),
 
+    // step crates so the tall stacks can be climbed
+    box(-36, -35, -21.5, -20.5, 1, 'crate'),
+    box(53, 54, -24.5, -23.5, 1, 'crate'),
+    box(30, 31, -33.5, -32.5, 1, 'crate'),
+    box(-29, -28, 5.5, 6.5, 1, 'crate'),
+    box(32, 33, 18.5, 19.5, 1, 'crate'),
+    box(41, 42, 31, 32, 1, 'crate'),
+    box(2, 3, 34.5, 35.5, 1, 'crate'),
+    box(-12, -11, -29.5, -28.5, 1, 'crate'),
+    box(7, 8, -55.5, -54.5, 1, 'crate'),
+
     box(-6, 6, 55, 58, 2.6, 'metal'),
     box(-30, -26, 52, 54, 1.2, 'hay'),
     box(26, 30, 50, 52, 1.2, 'hay'),
@@ -153,6 +164,11 @@ const creamery = {
     box(-3.5, 3.5, -3.5, 3.5, 6, 'tank'),
     box(-11, -9, -1, 1, 2, 'crate'), box(9, 11, -1, 1, 2, 'crate'),
     box(-1, 1, -11, -9, 2, 'crate'), box(-1, 1, 9, 11, 2, 'crate'),
+    // step crates next to the 2 m stacks
+    box(-12, -11, -0.5, 0.5, 1, 'crate'), box(11, 12, -0.5, 0.5, 1, 'crate'),
+    box(-0.5, 0.5, -12, -11, 1, 'crate'), box(-0.5, 0.5, 11, 12, 1, 'crate'),
+    box(-0.5, 0.5, -27, -26, 1, 'crate'), box(-0.5, 0.5, 26, 27, 1, 'crate'),
+    box(-27, -26, -0.5, 0.5, 1, 'crate'), box(26, 27, -0.5, 0.5, 1, 'crate'),
     box(-9, -6.5, -9, -7.8, 1.2, 'hay'), box(6.5, 9, 7.8, 9, 1.2, 'hay'),
     box(6.5, 9, -9, -7.8, 1.2, 'hay'), box(-9, -6.5, 7.8, 9, 1.2, 'hay'),
 
@@ -185,18 +201,68 @@ const creamery = {
   paved: [{ minX: -17, maxX: 17, minZ: -17, maxZ: 17 }],
 };
 
-export const MAPS = { de_barnyard: barnyard, dm_creamery: creamery };
+// ─── aim_pasture: symmetrical 1v1 duel arena ───────────────────────
+const duelSpawns = [[-21, -8], [-21, 0], [-21, 8], [-18, -11], [-18, 11], [21, 8], [21, 0], [21, -8], [18, 11], [18, -11]];
+const pasture = {
+  name: 'aim_pasture',
+  title: 'Pasture',
+  mode: 'duel',
+  bounds: { minX: -24, maxX: 24, minZ: -16, maxZ: 16 },
+  wallH: 5,
+  boxes: [
+    box(-26, 26, -18, -16, 5, 'stone'),
+    box(-26, 26, 16, 18, 5, 'stone'),
+    box(-26, -24, -16, 16, 5, 'stone'),
+    box(24, 26, -16, 16, 5, 'stone'),
+
+    // centre stage with stairs on both sides (0.4 m steps)
+    box(-3, 3, -3, 3, 1.2, 'wood'),
+    box(-1.5, 1.5, 3, 4, 0.8, 'wood'), box(-1.5, 1.5, 4, 5, 0.4, 'wood'),
+    box(-1.5, 1.5, -4, -3, 0.8, 'wood'), box(-1.5, 1.5, -5, -4, 0.4, 'wood'),
+    box(-5, -4, -1, 1, 1, 'hay'), box(4, 5, -1, 1, 1, 'hay'),
+
+    // rotationally symmetric cover
+    box(-12, -10, -8, -6, 2, 'crate'), box(10, 12, 6, 8, 2, 'crate'),
+    box(-10, -9, -7.5, -6.5, 1, 'crate'), box(9, 10, 6.5, 7.5, 1, 'crate'),
+    box(-12, -9, 5, 6.2, 1.2, 'hay'), box(9, 12, -6.2, -5, 1.2, 'hay'),
+    box(-7, -6, -14, -9, 1.4, 'brick'), box(6, 7, 9, 14, 1.4, 'brick'),
+    box(-7, -6, 9, 12, 1.4, 'brick'), box(6, 7, -12, -9, 1.4, 'brick'),
+    box(-17, -15, -2, 2, 3, 'metal'), box(15, 17, -2, 2, 3, 'metal'),
+    box(-21, -19, -14, -12, 1, 'crate'), box(19, 21, 12, 14, 1, 'crate'),
+  ],
+  spawns: { FFA: duelSpawns, T: duelSpawns, CT: duelSpawns },
+  spawnYaw: { T: 0, CT: 0 },
+  buyZones: {},
+  sites: {},
+  roam: [...duelSpawns, [0, -8], [0, 8], [-10, 0], [10, 0], [-13, -11], [13, 11]],
+  silos: [],
+  decor: {
+    lamps: [[-24, 0, 1, 0], [24, 0, -1, 0], [0, -16, 0, 1], [0, 16, 0, -1]],
+    barrels: [[-23.65, -14], [23.65, 14]],
+  },
+  paved: [{ minX: -6, maxX: 6, minZ: -6, maxZ: 6 }],
+};
+
+export const MAPS = { de_barnyard: barnyard, dm_creamery: creamery, aim_pasture: pasture };
 
 export const MODES = {
   defusal: { id: 'defusal', name: 'Defusal', desc: '5v5 · Plant or defuse the Sour Milk Bomb', map: 'de_barnyard' },
   ffa: { id: 'ffa', name: 'Free-for-all', desc: 'Everyone vs everyone · First to 20 kills', map: 'dm_creamery' },
+  duel: { id: 'duel', name: '1v1 Duel', desc: 'Head-to-head · First to 10 kills', map: 'aim_pasture' },
 };
 
 export let MAP = barnyard;
 
-export function setActiveMap(name) {
-  MAP = MAPS[name] || barnyard;
+/** Accepts a map name or a map object (e.g. from instanceMap). */
+export function setActiveMap(nameOrMap) {
+  MAP = typeof nameOrMap === 'object' && nameOrMap ? nameOrMap : (MAPS[nameOrMap] || barnyard);
   return MAP;
+}
+
+/** A private copy of a map whose box list can hold placed cow blocks. */
+export function instanceMap(name) {
+  const base = MAPS[name] || barnyard;
+  return { ...base, boxes: [...base.boxes] };
 }
 
 export function inRect(r, x, z) {

@@ -102,10 +102,11 @@ buildSettings($('settingsForm'));
     butter: `Blinds enemies in butter for up to ${UTIL.FLASH_MAX}s`,
     molotov: `Melted fondue pool · ${UTIL.FIRE_DPS} dmg/s · slows`,
     smoke: `Sour green stink cloud for ${UTIL.SMOKE_DURATION}s`,
+    cowblock: 'Free every life · Left click to place, right click to pick up · Climb it, then Moo Stomp enemies from above',
     he: `Curd fragments · up to ${UTIL.HE_DAMAGE} area damage`,
   };
   for (const w of Object.values(WEAPONS)) {
-    if (w.slot === 'bomb') continue;
+    if (w.slot === 'bomb' || w.slot === 'special') continue;
     const div = document.createElement('div');
     div.className = 'arsenal-item';
     const stats = w.damage
@@ -140,7 +141,7 @@ let mode = localStorage.getItem('csmoo.mode') === 'ffa' ? 'ffa' : 'defusal';
 function selectMode(m, { preview = true } = {}) {
   mode = MODES[m] ? m : 'defusal';
   document.querySelectorAll('.mode-card').forEach((x) => x.classList.toggle('selected', x.dataset.mode === mode));
-  document.querySelector('#menu .team-pick').hidden = mode === 'ffa';
+  document.querySelector('#menu .team-pick').hidden = mode !== 'defusal';
   if (preview) game.loadMap(MODES[mode].map);
   try { localStorage.setItem('csmoo.mode', mode); } catch { /* storage unavailable */ }
 }
@@ -164,8 +165,8 @@ async function refreshRooms() {
     for (const r of active) {
       const d = document.createElement('div');
       d.className = 'room-item';
-      const info = r.mode === 'ffa' ? `${r.humans} players · FFA` : `${r.humans} players · ${r.score.T}:${r.score.CT} · R${r.round}`;
-      const label = r.name.replace(/^public-(defusal|ffa)-?/, 'Public ').trim() || r.name;
+      const info = r.mode !== 'defusal' ? `${r.humans} players · ${MODES[r.mode]?.name || ''}` : `${r.humans} players · ${r.score.T}:${r.score.CT} · R${r.round}`;
+      const label = r.name.replace(/^public-(defusal|ffa|duel)-?/, 'Public ').trim() || r.name;
       d.innerHTML = `<span>${label} <small class="room-mode">${MODES[r.mode]?.name || ''}</small></span><em>${info}</em>`;
       d.onclick = () => joinGame({ action: 'room', room: r.name, mode: r.mode });
       el.appendChild(d);

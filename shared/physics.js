@@ -78,6 +78,12 @@ export function stepBody(s, input, dtTotal, boxes = MAP.boxes) {
       if (next < s.crouch && boxBlocked(s.x, s.y + 0.01, s.z, PLAYER.RADIUS - 0.02, playerHeight(next), boxes)) {
         // no headroom — stay crouched
       } else {
+        // Crouching mid-air tucks the legs up (crouch-jump); standing back up lowers them again.
+        if (!s.onGround) {
+          const lift = playerHeight(s.crouch) - playerHeight(next);
+          const ny = s.y + lift;
+          if (ny >= 0 && !boxBlocked(s.x, ny, s.z, PLAYER.RADIUS - 0.02, playerHeight(next), boxes)) s.y = ny;
+        }
         s.crouch = next;
       }
     }

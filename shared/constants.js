@@ -34,6 +34,31 @@ export const FFA = {
   BUY_WINDOW: 10,
 };
 
+export const DUEL = {
+  TIME: 300,
+  FRAG_LIMIT: 10,
+  RESPAWN: 2.5,
+  PROTECT: 1.5,
+  WARMUP: 5,
+  PLAYERS: 2,
+  MAX_HUMANS: 2,
+  BUY_WINDOW: 10,
+};
+
+export function modeConfig(mode) {
+  return mode === 'duel' ? DUEL : FFA;
+}
+
+// Placeable cow blocks.
+export const BLOCKS = {
+  PER_LIFE: { defusal: 6, ffa: 15, duel: 20 },
+  REACH: 5,
+  HP: 120,
+  LIFETIME: 90,
+  MAX_HEIGHT: 8,
+  COOLDOWN: 0.2,
+};
+
 // Health regeneration: after DELAY seconds without taking damage, heal RATE hp per second.
 export const REGEN = { DELAY: 4, RATE: 12 };
 
@@ -64,7 +89,7 @@ export const PLAYER = {
   SPEED: 6.2,
   WALK_MULT: 0.52,
   CROUCH_MULT: 0.34,
-  JUMP_V: 6.4,
+  JUMP_V: 7.0,
   GRAVITY: 20,
   GROUND_ACCEL: 11,
   AIR_ACCEL: 60,
@@ -133,7 +158,7 @@ export const WEAPONS = {
     damage: { head: 60, body: 24, leg: 18 }, armorPen: 0.8,
     rpm: 240, mag: 7, reserve: 32, reload: 2.9, auto: true, pellets: 8,
     spread: 0.055, moveSpread: 0.02, jumpSpread: 0.08, range: 35, falloff: 0.72,
-    speedMult: 0.9, killReward: 900, recoil: 'pasteurizer', penetration: 0, deploy: 0.9, recovery: 6, adsSpread: 0.8,
+    speedMult: 0.9, killReward: 900, recoil: 'pasteurizer', penetration: 0, deploy: 0.9, recovery: 6, adsSpread: 0.8, shellReload: 0.5,
   },
   ak: {
     id: 'ak', name: 'AK-Moory', slot: 'primary', cls: 'Rifle', price: 2700, team: 'T',
@@ -162,6 +187,8 @@ export const WEAPONS = {
   molotov: { id: 'molotov', name: 'Cheese Molotov', slot: 'grenade', cls: 'Grenade', price: 400, team: 'any', max: 1, speedMult: 1, fuse: 2.0 },
   smoke: { id: 'smoke', name: 'Sour Milk Grenade', slot: 'grenade', cls: 'Grenade', price: 300, team: 'any', max: 1, speedMult: 1, fuse: 3.0 },
   he: { id: 'he', name: 'He-Cheese', slot: 'grenade', cls: 'Grenade', price: 300, team: 'any', max: 1, speedMult: 1, fuse: 1.6 },
+  cowblock: { id: 'cowblock', name: 'Cow Block', slot: 'block', cls: 'Block', price: 0, team: 'any', speedMult: 1 },
+  stomp: { id: 'stomp', name: 'Moo Stomp', slot: 'special', cls: 'Special', price: 0, team: 'any', speedMult: 1, killReward: 1500, armorPen: 1 },
   bomb: { id: 'bomb', name: 'Sour Milk Bomb', slot: 'bomb', cls: 'Bomb', price: 0, team: 'T', speedMult: 1 },
 };
 

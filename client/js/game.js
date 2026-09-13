@@ -1,7 +1,7 @@
 // Client game controller: rendering loop, input, local prediction, shooting, remote entities & event handling.
 import * as THREE from 'three';
-import { WEAPONS, RECOIL, INTERP_DELAY, UTIL, TEAMS, ROUND, HUMAN_SPREAD, RECOIL_VIEW } from '/shared/constants.js';
-import { MAP, siteAt, setActiveMap } from '/shared/map.js';
+import { WEAPONS, RECOIL, INTERP_DELAY, UTIL, TEAMS, ROUND, HUMAN_SPREAD, RECOIL_VIEW, BLOCKS } from '/shared/constants.js';
+import { MAP, siteAt, setActiveMap, instanceMap } from '/shared/map.js';
 import {
   newBody, stepBody, eyeHeight, playerHeight, raycastWorld, rayPlayer, shotDirection, dirFromAngles, lineClear,
 } from '/shared/physics.js';
@@ -41,9 +41,12 @@ export class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 1600);
     this.camera.rotation.order = 'YXZ';
+    setActiveMap(instanceMap(MAP.name));
     this.world = buildWorld(this.scene, r, { shadows: settings.shadows });
     this.mapName = MAP.name;
     this.gameMode = 'defusal';
+    this.blocks = new Map();
+    this.initBlockAssets();
     this.vm = new ViewModel();
     this.vm.scene.environment = this.scene.environment;
     this.vm.scene.environmentIntensity = 0.8;
@@ -123,15 +126,20 @@ export class Game {
   loadMap(name) {
     if (!name || name === this.mapName) return;
     this.world.dispose();
-    setActiveMap(name);
+    this.clearBlocks();
+    setActiveMap(instanceMap(name));
     this.mapName = name;
     this.world = buildWorld(this.scene, this.renderer, { shadows: this.settings.shadows });
     this.vm.scene.environment = this.scene.environment;
     this.hud.setMap();
   }
 
+  get ffaLike() {
+    return this.gameMode === 'ffa' || this.gameMode === 'duel';
+  }
+
   isEnemy(e) {
-    return this.gameMode === 'ffa' ? e.id !== this.me.id : e.team !== this.me.team;
+    return this.ffaLike ? e.id !== this.me.id : e.team !== this.me.team;
   }
 
   recoilPunch(w) {
@@ -162,6 +170,7 @@ export class Game {
   // ─── Session ───────────────────────────────────────────────
   async join({ room, name, team, mode, action }) {
     this.resetState();
+    this.clearBlocks();
     this.net = new Net();
     this.bindNet();
     const welcome = await this.net.connect({ room, name, team, mode, action });
@@ -183,6 +192,7 @@ export class Game {
     for (const e of this.entities.values()) this.scene.remove(e.model.root);
     for (const n of this.nades.values()) this.scene.remove(n.mesh);
     this.effects.clear();
+    this.clearBlocks();
     this.resetState();
     this.bombMesh.visible = false;
     this.mode = 'menu';
@@ -264,13 +274,14 @@ export class Game {
         case 'Digit3': this.switchTo('hoof'); break;
         case 'Digit4': this.cycleGrenade(); break;
         case 'Digit5': if (this.me.bomb) this.switchTo('bomb'); break;
+        case 'Digit6': case 'KeyX': this.switchTo('cowblock'); break;
         case 'KeyQ': this.switchTo(this.lastWeapon); break;
         case 'KeyB': this.openBuy(); break;
         case 'KeyE': this.setUse(true); break;
         case 'KeyG': if (this.me.act === 'bomb') this.net?.send({ t: 'drop' }); break;
         case 'KeyF': if (this.me.alive && !this.scoped) this.vm.inspect(); break;
-        case 'KeyY': case 'KeyU': this.openChat(e.code === 'KeyU' && this.gameMode !== 'ffa'); e.preventDefault(); break;
-        case 'KeyM': if (this.gameMode !== 'ffa') this.openTeamSelect(); break;
+        case 'KeyY': case 'KeyU': this.openChat(e.code === 'KeyU' && !this.ffaLike); e.preventDefault(); break;
+        case 'KeyM': if (!this.ffaLike) this.openTeamSelect(); break;
       }
     });
     document.addEventListener('keyup', (e) => {
@@ -283,7 +294,7 @@ export class Game {
   openBuy() {
     if (!this.me.alive) return;
     if (!this.me.buy) {
-      this.hud.center(this.gameMode === 'ffa' ? 'You can only buy while alive' : this.phase === 'live' ? 'Buy time is over / not in buy zone' : 'You can only buy in your spawn', 1600);
+      this.hud.center(this.ffaLike ? 'You can only buy while alive' : this.phase === 'live' ? 'Buy time is over / not in buy zone' : 'You can only buy in your spawn', 1600);
       return;
     }
     this.uiOpen = 'buy';
@@ -292,7 +303,7 @@ export class Game {
       this.net.send({ t: 'buy', item: id });
       this.audio.buy();
     });
-    this.hud.refreshBuy(this.me, this.me.team, this.me.buyLeft, this.gameMode === 'ffa');
+    this.hud.refreshBuy(this.me, this.me.team, this.me.buyLeft, this.ffaLike);
   }
 
   closeBuy(relock) {
@@ -309,7 +320,7 @@ export class Game {
   }
 
   openTeamSelect() {
-    if (this.gameMode === 'ffa') return;
+    if (this.ffaLike) return;
     this.uiOpen = 'team';
     document.exitPointerLock();
     document.getElementById('teamSelect').hidden = false;
@@ -333,7 +344,7 @@ export class Game {
 
   switchTo(id, { silent = false } = {}) {
     if (!id || !this.me.alive || id === this.me.act) return;
-    const owned = id === 'hoof' || id === this.me.pri || id === this.me.sec || this.me.gr.includes(id) || (id === 'bomb' && this.me.bomb);
+    const owned = id === 'hoof' || id === this.me.pri || id === this.me.sec || this.me.gr.includes(id) || (id === 'bomb' && this.me.bomb) || (id === 'cowblock' && this.me.blocks > 0);
     if (!owned) return;
     this.lastWeapon = this.me.act;
     this.me.act = id;
@@ -352,7 +363,7 @@ export class Game {
   }
 
   cycleWeapon(dir) {
-    const list = [this.me.pri, this.me.sec, 'hoof', ...new Set(this.me.gr), this.me.bomb ? 'bomb' : null].filter(Boolean);
+    const list = [this.me.pri, this.me.sec, 'hoof', ...new Set(this.me.gr), this.me.bomb ? 'bomb' : null, this.me.blocks > 0 ? 'cowblock' : null].filter(Boolean);
     const i = list.indexOf(this.me.act);
     this.switchTo(list[(i + dir + list.length) % list.length]);
   }
@@ -374,12 +385,15 @@ export class Game {
     const w = WEAPONS[id];
     const a = this.me.am[id];
     if (!this.me.alive || !w?.mag || !a || this.reloadUntil || a[0] >= w.mag || a[1] <= 0) return;
-    this.reloadUntil = this.now() + w.reload;
-    this.vm.reload(w.reload);
-    this.audio.reload(w.reload);
+    const dur = w.shellReload || w.reload;
+    const style = w.shellReload ? 'shell' : w.cls === 'Pistol' ? 'pistol' : 'mag';
+    this.reloadUntil = this.now() + dur;
+    this.reloadDur = dur;
+    this.vm.reload(dur, style);
+    this.audio.reload(dur, style);
     this.net.send({ t: 'reload' });
     this.setScope(0);
-    this.ammoLockUntil = this.now() + w.reload + 0.4;
+    this.ammoLockUntil = this.now() + dur + 0.4;
   }
 
   onPrimaryDown() {
@@ -463,14 +477,36 @@ export class Game {
       }
       return;
     }
+    if (w.slot === 'block') { this.handleBlocks(now); return; }
     if (w.slot !== 'primary' && w.slot !== 'secondary') return;
     if (this.reloadUntil) {
-      if (now >= this.reloadUntil) {
-        const a = this.me.am[id];
-        if (a) { a[0] = w.mag; a[1] = w.reserve; }
+      const ra = this.me.am[id];
+      if (w.shellReload && this.mouse.left && this.triggerFresh && ra && ra[0] > 0) {
+        // pulling the trigger interrupts a shell-by-shell reload
         this.reloadUntil = 0;
+        this.vm.cancelReload();
+      } else {
+        if (now >= this.reloadUntil) {
+          if (ra && w.shellReload) {
+            ra[0] = Math.min(w.mag, ra[0] + 1);
+            if (ra[0] < w.mag) {
+              this.reloadUntil = now + w.shellReload;
+              this.reloadDur = w.shellReload;
+              this.vm.reload(w.shellReload, 'shell');
+              this.audio.reload(w.shellReload, 'shell');
+              this.ammoLockUntil = now + w.shellReload + 0.4;
+            } else {
+              this.reloadUntil = 0;
+              this.vm.pump();
+              this.audio.pump();
+            }
+          } else {
+            if (ra) { ra[0] = w.mag; ra[1] = w.reserve; }
+            this.reloadUntil = 0;
+          }
+        }
+        return;
       }
-      return;
     }
     if (!this.mouse.left || now < this.deployUntil) return;
     const a = this.me.am[id];
@@ -543,6 +579,168 @@ export class Game {
     return { ...best, point: [o[0] + d[0] * best.t, o[1] + d[1] * best.t, o[2] + d[2] * best.t] };
   }
 
+  // ─── Cow blocks ────────────────────────────────────────────
+  initBlockAssets() {
+    const face = (withFace) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#f3efe6';
+      ctx.fillRect(0, 0, 128, 128);
+      ctx.fillStyle = '#1b1b1d';
+      for (const [x, y, rr] of [[22, 24, 16], [98, 30, 13], [72, 98, 18], [18, 102, 11], [106, 106, 9]]) {
+        ctx.beginPath(); ctx.ellipse(x, y, rr * 1.2, rr, 0.4, 0, Math.PI * 2); ctx.fill();
+      }
+      if (withFace) {
+        ctx.fillStyle = '#f2a0b4';
+        ctx.beginPath(); ctx.ellipse(64, 88, 30, 19, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#6a2c3a';
+        for (const x of [52, 76]) { ctx.beginPath(); ctx.ellipse(x, 88, 5, 7, 0, 0, Math.PI * 2); ctx.fill(); }
+        ctx.fillStyle = '#111';
+        for (const x of [42, 86]) { ctx.beginPath(); ctx.arc(x, 50, 8, 0, Math.PI * 2); ctx.fill(); }
+        ctx.fillStyle = '#fff';
+        for (const x of [45, 89]) { ctx.beginPath(); ctx.arc(x, 47, 3, 0, Math.PI * 2); ctx.fill(); }
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(4, 4, 120, 120);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.magFilter = THREE.NearestFilter;
+      return t;
+    };
+    const side = new THREE.MeshStandardMaterial({ map: face(false), roughness: 0.8 });
+    const front = new THREE.MeshStandardMaterial({ map: face(true), roughness: 0.8 });
+    this.blockMats = [side, side, side, side, front, front];
+    this.blockGeo = new THREE.BoxGeometry(1, 1, 1);
+    this.blockGhost = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)),
+      new THREE.LineBasicMaterial({ color: 0x8fd16a, transparent: true, opacity: 0.9 }),
+    );
+    this.blockGhost.visible = false;
+    this.scene.add(this.blockGhost);
+  }
+
+  blockTarget() {
+    const eye = this.eye();
+    const dir = dirFromAngles(this.yaw, this.pitch);
+    const hit = raycastWorld(eye, dir, BLOCKS.REACH);
+    if (!hit) return null;
+    const n = hit.normal;
+    if (!n || (n[0] === 0 && n[1] === 0 && n[2] === 0)) return null;
+    const p = [eye[0] + dir[0] * hit.t, eye[1] + dir[1] * hit.t, eye[2] + dir[2] * hit.t];
+    const cell = [Math.floor(p[0] + n[0] * 0.5), Math.floor(p[1] + n[1] * 0.5), Math.floor(p[2] + n[2] * 0.5)];
+    return { cell, box: hit.box, valid: this.canPlaceAt(cell) };
+  }
+
+  canPlaceAt([x, y, z]) {
+    const B = MAP.bounds;
+    if (y < 0 || y > BLOCKS.MAX_HEIGHT || x < B.minX || x + 1 > B.maxX || z < B.minZ || z + 1 > B.maxZ) return false;
+    const E = 0.01;
+    for (const b of MAP.boxes) {
+      if (x + 1 - E > b.min[0] && x + E < b.max[0] && y + 1 - E > b.min[1] && y + E < b.max[1] && z + 1 - E > b.min[2] && z + E < b.max[2]) return false;
+    }
+    const bodies = [[this.body.x, this.body.y, this.body.z, this.body.crouch]];
+    for (const e of this.entities.values()) if (e.alive && e.pos) bodies.push([e.pos[0], e.pos[1], e.pos[2], e.crouch]);
+    for (const [bx, by, bz, c] of bodies) {
+      const h = playerHeight(c), r = 0.4;
+      if (x + 1 > bx - r && x < bx + r && y + 1 > by && y < by + h && z + 1 > bz - r && z < bz + r) return false;
+    }
+    return true;
+  }
+
+  handleBlocks(now) {
+    if (!(this.me.blocks > 0)) return;
+    const target = this.blockTarget();
+    if (this.mouse.left && now >= (this.nextPlaceT || 0) && target?.valid) {
+      this.nextPlaceT = now + BLOCKS.COOLDOWN + 0.02;
+      this.net.send({ t: 'place', c: target.cell });
+      this.vm.place();
+    } else if (this.mouse.right && now >= (this.nextPlaceT || 0) && target?.box?.dyn && target.box.owner === this.me.id) {
+      this.nextPlaceT = now + 0.3;
+      this.net.send({ t: 'breakBlock', id: target.box.id });
+      this.vm.place();
+    }
+  }
+
+  updateBlockGhost() {
+    for (const b of this.blocks.values()) {
+      if (b.mesh.scale.x < 1) b.mesh.scale.setScalar(Math.min(1, b.mesh.scale.x + 0.1));
+    }
+    const show = this.mode === 'playing' && this.me.alive && this.me.act === 'cowblock' && this.me.blocks > 0;
+    const target = show ? this.blockTarget() : null;
+    this.blockGhost.visible = !!target;
+    if (!target) return;
+    this.blockGhost.position.set(target.cell[0] + 0.5, target.cell[1] + 0.5, target.cell[2] + 0.5);
+    this.blockGhost.material.color.setHex(target.valid ? 0x8fd16a : 0xe5484d);
+  }
+
+  addBlock(id, c, owner, fresh = false) {
+    if (this.blocks.has(id)) return;
+    const box = { min: [c[0], c[1], c[2]], max: [c[0] + 1, c[1] + 1, c[2] + 1], mat: 'cowblock', dyn: true, id, owner };
+    MAP.boxes.push(box);
+    const mesh = new THREE.Mesh(this.blockGeo, this.blockMats);
+    mesh.position.set(c[0] + 0.5, c[1] + 0.5, c[2] + 0.5);
+    mesh.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+    this.blocks.set(id, { box, mesh });
+    if (fresh) {
+      mesh.scale.setScalar(0.3);
+      this.audio.blockPlace([c[0] + 0.5, c[1] + 0.5, c[2] + 0.5]);
+      clearTimeout(this.shadowTimer);
+      this.shadowTimer = setTimeout(() => this.world.refreshShadows(), 300);
+    }
+  }
+
+  removeBlock(id, fx = false) {
+    const b = this.blocks.get(id);
+    if (!b) return;
+    const i = MAP.boxes.indexOf(b.box);
+    if (i >= 0) MAP.boxes.splice(i, 1);
+    this.scene.remove(b.mesh);
+    this.blocks.delete(id);
+    if (fx) {
+      const p = b.mesh.position;
+      for (let k = 0; k < 18; k++) {
+        this.effects.normal.emit(
+          [p.x + (Math.random() - 0.5) * 0.8, p.y + (Math.random() - 0.5) * 0.8, p.z + (Math.random() - 0.5) * 0.8],
+          [(Math.random() - 0.5) * 5, Math.random() * 5, (Math.random() - 0.5) * 5],
+          { life: 0.8, size: 0.14, size1: 0.08, color: k % 2 ? 0x1b1b1d : 0xf3efe6, gravity: 14, spin: 6 },
+        );
+      }
+      this.audio.blockBreak([p.x, p.y, p.z]);
+      clearTimeout(this.shadowTimer);
+      this.shadowTimer = setTimeout(() => this.world.refreshShadows(), 100);
+    }
+  }
+
+  clearBlocks() {
+    if (!this.blocks) return;
+    for (const id of [...this.blocks.keys()]) this.removeBlock(id);
+  }
+
+  /** Falling onto an enemy's head → Moo Stomp (server validates). */
+  checkStomp(vyBefore) {
+    if (vyBefore > -3 || !this.me.alive) return;
+    const now = this.now();
+    if (now - (this.lastStompT || 0) < 0.6) return;
+    for (const e of this.entities.values()) {
+      if (!e.alive || !e.pos || !this.isEnemy(e)) continue;
+      const top = e.pos[1] + playerHeight(e.crouch);
+      if (Math.hypot(this.body.x - e.pos[0], this.body.z - e.pos[2]) > 0.75) continue;
+      if (this.body.y > top + 0.25 || this.body.y < top - 0.55) continue;
+      this.lastStompT = now;
+      this.net.send({ t: 'stomp', id: e.id, vy: vyBefore, rt: this.net.serverNow() - INTERP_DELAY });
+      this.body.vy = 7.5;
+      this.body.onGround = false;
+      this.audio.stomp(null);
+      this.shake = Math.max(this.shake, 0.35);
+      break;
+    }
+  }
+
   // ─── Networking events ─────────────────────────────────────
   bindNet() {
     const n = this.net;
@@ -553,6 +751,7 @@ export class Game {
       for (const s of m.smokes) this.effects.smoke(s.id, s.p, s.left);
       for (const f of m.fires) this.effects.fire(f.id, f.p, f.left);
       for (const p of m.puddles) this.effects.puddle(p.p, p.left);
+      for (const blk of m.blocks || []) this.addBlock(blk[0], [blk[1], blk[2], blk[3]], blk[4]);
     });
     n.on('spawn', (m) => {
       this.body = newBody(m.p[0], m.p[1], m.p[2]);
@@ -644,6 +843,17 @@ export class Game {
       this.flashDur = m.d;
       this.flashFull = m.full;
       this.audio.tinnitus(m.d * 0.8);
+    });
+    n.on('block', (m) => {
+      if (m.op === 'add') this.addBlock(m.id, m.c, m.owner, true);
+      else if (m.op === 'del') this.removeBlock(m.id, true);
+      else if (m.op === 'clear') this.clearBlocks();
+    });
+    n.on('stomp', (m) => {
+      this.effects.bloodSplat(m.p, [0, -1, 0]);
+      this.effects.ring(m.p, 0xffffff, 2.5, 0.3);
+      this.audio.stomp(m.p);
+      if (m.v === this.me.id) this.shake = Math.max(this.shake, 0.6);
     });
     n.on('bomb', (m) => this.onBombEvent(m));
     n.on('chat', (m) => this.hud.addChat(m));
@@ -747,7 +957,7 @@ export class Game {
       this.vm.setTeam(m.team);
       for (const e of this.entities.values()) if (e.tag) this.setTag(e, e.tagName);
     }
-    Object.assign(me, { hp: m.hp, ar: m.ar, hm: m.hm, m: m.m, kit: m.kit, bomb: m.bomb, buy: m.buy, buyLeft: m.buyLeft, pri: m.pri, sec: m.sec, rs: m.rs, prot: m.prot });
+    Object.assign(me, { hp: m.hp, ar: m.ar, hm: m.hm, m: m.m, kit: m.kit, bomb: m.bomb, buy: m.buy, buyLeft: m.buyLeft, pri: m.pri, sec: m.sec, rs: m.rs, prot: m.prot, blocks: m.bl ?? 0 });
     this.youT = performance.now();
     if (now > this.lastSwitchT + 0.1) me.gr = [...m.gr];
     if (m.alive !== me.alive && !m.alive) me.alive = false;
@@ -763,7 +973,7 @@ export class Game {
       if (!me.use) this.useLocalStart = now - m.use.s;
       me.use = m.use;
     } else me.use = null;
-    if (this.hud.buyOpen) this.hud.refreshBuy(me, me.team, me.buyLeft, this.gameMode === 'ffa');
+    if (this.hud.buyOpen) this.hud.refreshBuy(me, me.team, me.buyLeft, this.ffaLike);
   }
 
   onRoster(m) {
@@ -789,7 +999,7 @@ export class Game {
   onKill(m) {
     const killer = m.k ? this.playerName(m.k) : null;
     const victim = this.playerName(m.v) || { name: '?', team: 'T' };
-    this.hud.killfeed({ killer, victim, weapon: m.w, hs: m.hs, wb: m.wb, me: m.k === this.me.id || m.v === this.me.id, ffa: this.gameMode === 'ffa' });
+    this.hud.killfeed({ killer, victim, weapon: m.w, hs: m.hs, wb: m.wb, me: m.k === this.me.id || m.v === this.me.id, ffa: this.ffaLike });
     this.audio.death(m.p, m.v === this.me.id);
     const e = this.entities.get(m.v);
     if (e) { e.model.kill(m.yaw); e.alive = false; }
@@ -800,7 +1010,7 @@ export class Game {
       this.deathPos = [this.body.x, this.body.y + eyeHeight(this.body.crouch), this.body.z];
       this.setScope(0);
       this.setUse(false);
-      const color = this.gameMode === 'ffa' ? '#f1f3f5' : TEAMS[killer?.team]?.color || '#f1f3f5';
+      const color = this.ffaLike ? '#f1f3f5' : TEAMS[killer?.team]?.color || '#f1f3f5';
       const txt = killer && m.k !== this.me.id
         ? `Milked by <span style="color:${color}">${killer.name}</span> · ${weaponLabel(m.w)}${m.hs ? ' · headshot' : ''}`
         : 'You were eliminated';
@@ -915,6 +1125,7 @@ export class Game {
     }
 
     this.updateLocal(dt);
+    this.updateBlockGhost();
     this.updateEntities(dt);
     this.updateCamera(dt);
     this.updateHud(dt);
@@ -954,7 +1165,9 @@ export class Game {
       const crouch = k.has('ControlLeft') || k.has('KeyC');
       const slick = this.effects.onPuddle(this.body.x, this.body.y, this.body.z);
       const slow = this.effects.inFire(this.body.x, this.body.y, this.body.z);
+      const vyBefore = this.body.vy;
       stepBody(this.body, { wx, wz, jump, walk, crouch: crouch && !frozen ? true : crouch, speedMult, slick, slow }, dt);
+      this.checkStomp(vyBefore);
       if (this.body.jumped) { this.body.jumped = false; this.jumpQueued = 0; }
       if (this.body.landedSpeed > 6) {
         this.audio.land(null);
@@ -1037,7 +1250,7 @@ export class Game {
       m.setWeapon(b.w);
       const speed = Math.hypot(b.vx, b.vz);
       m.update(dt, { speed, crouch, pitch, onGround: !!(b.flags & 8), bomb: !!(b.flags & 16), reloading: !!(b.flags & 2), using: !!(b.flags & 4) });
-      if (e.tag) e.tag.visible = alive && this.gameMode !== 'ffa' && e.team === this.me.team;
+      if (e.tag) e.tag.visible = alive && !this.ffaLike && e.team === this.me.team;
 
       if (alive && (b.flags & 8) && speed > 3.3) {
         e.stepDist += speed * dt;
@@ -1098,7 +1311,7 @@ export class Game {
       this.hud.spectate(null);
     } else {
       const sinceDeath = now - this.deathT;
-      if (sinceDeath < 2.5 || !this.deathPos || this.gameMode === 'ffa') {
+      if (sinceDeath < 2.5 || !this.deathPos || this.ffaLike) {
         const p = this.deathPos || [this.body.x, this.body.y + 1.6, this.body.z];
         cam.position.set(p[0], p[1] + Math.min(1.5, sinceDeath * 0.8), p[2]);
         const killer = this.entities.get(this.killerId);
@@ -1110,7 +1323,7 @@ export class Game {
           this.pitch += (pitch - this.pitch) * Math.min(1, dt * 4);
         }
         cam.rotation.set(this.pitch, this.yaw, 0);
-        if (this.gameMode === 'ffa' && this.phase === 'live') {
+        if (this.ffaLike && this.phase === 'live') {
           const left = Math.max(0, (me.rs || 0) - (performance.now() - (this.youT || 0)) / 1000);
           this.hud.spectate(`Respawning in <b>${left.toFixed(1)}s</b><small>Kills earn money · Press B to buy guns that stay with you</small>`);
         } else {
@@ -1149,12 +1362,12 @@ export class Game {
 
     const elapsed = (performance.now() - this.timeRecv) / 1000;
     const planted = this.bomb?.state === 'planted';
-    if (this.gameMode === 'ffa') {
+    if (this.ffaLike) {
       const mine = this.roster.find((p) => p.id === me.id)?.k ?? 0;
       const ranked = [...this.roster].sort((a, b) => b.k - a.k || a.d - b.d);
       const lead = ranked[0] || null;
       const rank = ranked.findIndex((p) => p.id === me.id) + 1;
-      hud.setTopbarFFA(this.phase, this.timeLeft - elapsed, mine, lead, rank);
+      hud.setTopbarFFA(this.phase, this.timeLeft - elapsed, mine, lead, rank, this.gameMode);
     } else {
       hud.setTopbar(this.phase, this.timeLeft - elapsed, this.score, this.round, planted);
     }
@@ -1169,11 +1382,12 @@ export class Game {
     hud.setAlive(this.roster, me.id);
     hud.setMoney(me.m);
     hud.setVitals(me.alive ? me.hp : 0, me.ar, me.hm);
-    const a = me.am[me.act] || [0, 0];
+    const a = me.act === 'cowblock' ? [me.blocks || 0, 0] : me.am[me.act] || [0, 0];
+    hud.reloadProgress(this.reloadUntil ? 1 - Math.max(0, this.reloadUntil - this.now()) / (this.reloadDur || 1) : null);
     hud.setAmmo(me.act, a[0], a[1]);
     hud.setInventory(me);
     hud.buyHint(me.buy && me.alive && this.phase !== 'end');
-    hud.spawnShield(this.gameMode === 'ffa' && me.alive && me.prot);
+    hud.spawnShield(this.ffaLike && me.alive && me.prot);
     hud.netgraph(this.fps, this.net?.rtt || 0);
 
     // crosshair
@@ -1203,7 +1417,7 @@ export class Game {
     } else hud.progress(null);
 
     hud.scoreboard(!!this.showScores, this.roster, me.id, this.score, this.round, this.gameMode);
-    if (hud.buyOpen) hud.refreshBuy(me, me.team, me.buyLeft, this.gameMode === 'ffa');
+    if (hud.buyOpen) hud.refreshBuy(me, me.team, me.buyLeft, this.ffaLike);
     if (hud.buyOpen && (!me.buy || !me.alive)) this.closeBuy(false);
 
     // radar

@@ -38,11 +38,11 @@ function lanAddresses() {
   return out;
 }
 
-const capacity = (m) => (m.ffa ? 12 : 10);
+const capacity = (m) => (m.mode === 'duel' ? 2 : m.ffa ? 12 : 10);
 
 /** Resolve which room a join request lands in. Returns { match } or { error }. */
 function resolveRoom(msg) {
-  const mode = msg.mode === 'ffa' ? 'ffa' : 'defusal';
+  const mode = ['ffa', 'duel'].includes(msg.mode) ? msg.mode : 'defusal';
   switch (msg.action) {
     case 'create': {
       const code = newCode();

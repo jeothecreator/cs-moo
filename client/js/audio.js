@@ -143,14 +143,54 @@ export class AudioEngine {
     this.tone(o, t, 0.03, { type: 'square', freq: 1800, gain: 0.08 });
   }
 
-  reload(dur) {
+  /** Reload sounds timed to the viewmodel stages: release, slide out, drop, insert, seat, rack. */
+  reload(dur, style = 'mag') {
     if (!this.ok) return;
     const t = this.ctx.currentTime, o = this.out(null, { reverb: 0 });
-    for (const k of [0.12, 0.5, 0.85]) {
-      this.noise(o, t + dur * k, 0.05, { type: 'highpass', freq: 2500, gain: 0.25 });
-      this.tone(o, t + dur * k, 0.03, { type: 'square', freq: 900 + k * 600, gain: 0.07 });
+    const click = (at, f, g = 0.22) => {
+      this.noise(o, t + at, 0.04, { type: 'highpass', freq: 2600, gain: g });
+      this.tone(o, t + at, 0.025, { type: 'square', freq: f, gain: 0.06 });
+    };
+    if (style === 'shell') {
+      this.noise(o, t + dur * 0.5, 0.06, { type: 'bandpass', freq: 1800, Q: 3, gain: 0.25 });
+      click(dur * 0.62, 900, 0.18);
+      return;
     }
-    this.noise(o, t + dur * 0.3, 0.25, { type: 'bandpass', freq: 700, freqEnd: 1600, Q: 3, gain: 0.15 });
+    click(dur * 0.12, 1100);
+    this.noise(o, t + dur * 0.16, 0.18, { type: 'bandpass', freq: 900, freqEnd: 500, Q: 2, gain: 0.14 });
+    this.noise(o, t + dur * 0.42, 0.08, { type: 'lowpass', freq: 500, gain: 0.22 });
+    this.noise(o, t + dur * 0.5, 0.2, { type: 'bandpass', freq: 700, freqEnd: 1400, Q: 2, gain: 0.12 });
+    click(dur * 0.7, 1400, 0.3);
+    this.noise(o, t + dur * 0.78, 0.07, { type: 'highpass', freq: 1800, gain: 0.28 });
+    click(dur * (style === 'pistol' ? 0.86 : 0.88), 1700, 0.3);
+  }
+
+  pump() {
+    if (!this.ok) return;
+    const t = this.ctx.currentTime, o = this.out(null, { reverb: 0.05 });
+    this.noise(o, t, 0.09, { type: 'bandpass', freq: 1200, Q: 1.5, gain: 0.35 });
+    this.noise(o, t + 0.16, 0.08, { type: 'bandpass', freq: 1600, Q: 1.5, gain: 0.35 });
+  }
+
+  blockPlace(pos) {
+    if (!this.ok) return;
+    const t = this.ctx.currentTime, o = this.out(pos, { range: 10, reverb: 0.1 });
+    this.noise(o, t, 0.08, { type: 'lowpass', freq: 600, gain: 0.45 });
+    this.tone(o, t, 0.12, { type: 'triangle', freq: 420, freqEnd: 260, gain: 0.2 });
+  }
+
+  blockBreak(pos) {
+    if (!this.ok) return;
+    const t = this.ctx.currentTime, o = this.out(pos, { range: 12, reverb: 0.15 });
+    this.noise(o, t, 0.25, { type: 'bandpass', freq: 900, freqEnd: 300, Q: 0.8, gain: 0.5 });
+    for (let i = 0; i < 5; i++) this.noise(o, t + 0.03 + i * 0.04, 0.03, { type: 'highpass', freq: 2500 + i * 300, gain: 0.12 });
+  }
+
+  stomp(pos) {
+    if (!this.ok) return;
+    const t = this.ctx.currentTime, o = this.out(pos, { range: 14, reverb: 0.2 });
+    this.tone(o, t, 0.25, { type: 'sine', freq: 180, freqEnd: 620, gain: 0.45 });
+    this.noise(o, t, 0.12, { type: 'lowpass', freq: 700, gain: 0.5 });
   }
 
   draw() {

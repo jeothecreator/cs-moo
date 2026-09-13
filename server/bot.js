@@ -19,7 +19,11 @@ export class BotBrain {
     this.m = match;
     this.p = p;
     // Free-for-all is a small arena — keep those brains casual so a human can play.
-    if (match.ffa) {
+    if (match.mode === 'duel') {
+      this.skill = rand(0.35, 0.55);
+      this.aggr = rand(0.4, 0.8);
+      this.campy = false;
+    } else if (match.ffa) {
       this.skill = rand(0.12, 0.34);
       this.aggr = rand(0.1, 0.45);
       this.campy = Math.random() < 0.5;

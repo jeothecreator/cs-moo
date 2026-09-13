@@ -2,9 +2,9 @@
 import { performance } from 'node:perf_hooks';
 import {
   TICK_RATE, SNAPSHOT_RATE, LAG_COMP_MAX, ROUND, ECON, PLAYER, WEAPONS, EQUIPMENT, RECOIL,
-  UTIL, GRENADE_IDS, MAX_GRENADES, FFA, DEFAULT_PRIMARY, REGEN, lossBonus,
+  UTIL, GRENADE_IDS, MAX_GRENADES, FFA, DEFAULT_PRIMARY, REGEN, BLOCKS, modeConfig, lossBonus,
 } from '../shared/constants.js';
-import { MAP, MODES, setActiveMap, inRect, siteAt } from '../shared/map.js';
+import { MAP, MODES, setActiveMap, instanceMap, inRect, siteAt } from '../shared/map.js';
 import {
   newBody, stepBody, raycastAll, raycastWorld, rayPlayer, eyeHeight, playerHeight, lineClear,
   dirFromAngles, shotDirection, boxBlocked, segmentSphere,
@@ -22,6 +22,7 @@ export class Match {
     this.name = name;
     this.mode = MODES[mode] ? mode : 'defusal';
     this.mapName = MODES[this.mode].map;
+    this.mapObj = instanceMap(this.mapName);
     this.use();
     this.players = new Map();
     this.nextId = 1;
@@ -37,8 +38,9 @@ export class Match {
     this.emptySince = nowMs();
   }
 
-  use() { setActiveMap(this.mapName); }
-  get ffa() { return this.mode === 'ffa'; }
+  use() { setActiveMap(this.mapObj); }
+  get ffa() { return this.mode === 'ffa' || this.mode === 'duel'; }
+  get cfg() { return modeConfig(this.mode); }
   hostile(a, b) { return a !== b && (this.ffa || a.team !== b.team); }
 
   resetMatchState() {
@@ -54,6 +56,9 @@ export class Match {
     this.sightings = { T: null, CT: null };
     this.teamPlan = { T: 'A' };
     this.nadeId = 1;
+    if (this.blocks) this.clearBlocks();
+    this.blocks = new Map();
+    this.blockId = this.blockId || 1;
   }
 
   destroy() { clearInterval(this.timer); }
@@ -109,6 +114,7 @@ export class Match {
       smokes: this.smokes.map((s) => ({ id: s.id, p: [s.x, s.y, s.z], left: s.until - this.nowS })),
       fires: this.fires.map((f) => ({ id: f.id, p: [f.x, f.y, f.z], left: f.until - this.nowS })),
       puddles: this.puddles.map((f) => ({ p: [f.x, f.y, f.z], left: f.until - this.nowS })),
+      blocks: [...this.blocks.values()].map((b) => [b.id, b.min[0], b.min[1], b.min[2], b.owner]),
     });
     if (this.phase === 'waiting') {
       this.ensureBots();
@@ -144,7 +150,7 @@ export class Match {
 
   removeBotFFA() {
     const bots = [...this.players.values()].filter((p) => p.bot);
-    if (this.players.size < FFA.PLAYERS || !bots.length) return;
+    if (this.players.size < this.cfg.PLAYERS || !bots.length) return;
     this.removePlayer(bots.find((b) => !b.alive) || bots[bots.length - 1], true);
   }
 
@@ -190,12 +196,12 @@ export class Match {
       return n;
     };
     if (this.ffa) {
-      while (this.players.size < FFA.PLAYERS) {
+      while (this.players.size < this.cfg.PLAYERS) {
         const b = this.createPlayer(nextName(), this.ffaTeam(), true);
         if (this.phase === 'buy' || this.phase === 'live') this.spawn(b, true);
       }
       const bots = [...this.players.values()].filter((p) => p.bot);
-      while (this.players.size > FFA.PLAYERS && bots.length) this.removePlayer(bots.pop(), true);
+      while (this.players.size > this.cfg.PLAYERS && bots.length) this.removePlayer(bots.pop(), true);
       return;
     }
     for (const team of ['T', 'CT']) {
@@ -217,7 +223,7 @@ export class Match {
     if (this.ffa) {
       this.round = 1;
       this.phase = 'buy';
-      this.phaseEnd = this.nowS + FFA.WARMUP;
+      this.phaseEnd = this.nowS + this.cfg.WARMUP;
       this.nades = [];
       for (const p of this.players.values()) this.spawn(p, true);
       this.broadcast({ t: 'round', phase: 'buy', round: 1, score: this.score, mode: this.mode });
@@ -236,6 +242,7 @@ export class Match {
     this.smokes = [];
     this.fires = [];
     this.puddles = [];
+    this.clearBlocks();
     this.planted = false;
     this.bomb = { state: 'none' };
     this.sightings = { T: null, CT: null };
@@ -305,8 +312,9 @@ export class Match {
     p.history = [];
     p.spawnT = this.nowS;
     p.respawnAt = 0;
-    p.protectUntil = this.ffa ? this.nowS + FFA.PROTECT : 0;
+    p.protectUntil = this.ffa ? this.nowS + this.cfg.PROTECT : 0;
     p.weapons.bomb = false;
+    p.blocksLeft = BLOCKS.PER_LIFE[this.mode] ?? 6;
     if (this.ffa) {
       p.armor = 100;
       p.helmet = true;
@@ -405,6 +413,9 @@ export class Match {
       case 'scope': p.scoped = msg.z | 0; return;
       case 'drop': if (p.alive && p.weapons.bomb && p.active === 'bomb') this.dropBomb(p, true); return;
       case 'team': return this.changeTeam(p, msg.team);
+      case 'place': return this.placeBlock(p, msg);
+      case 'breakBlock': return this.breakOwnBlock(p, msg);
+      case 'stomp': return this.onStomp(p, msg);
       case 'chat': return this.onChat(p, msg);
       case 'ping': p.ping = msg.rtt | 0; return this.send(p, { t: 'pong', ts: msg.ts, st: nowMs() });
     }
@@ -515,14 +526,14 @@ export class Match {
 
   hasWeapon(p, id) {
     const w = p.weapons;
-    return id === 'hoof' || w.primary === id || w.secondary === id || w.grenades.includes(id) || (id === 'bomb' && w.bomb);
+    return id === 'hoof' || w.primary === id || w.secondary === id || w.grenades.includes(id) || (id === 'bomb' && w.bomb) || (id === 'cowblock' && p.blocksLeft > 0);
   }
 
   startReload(p) {
     const w = WEAPONS[p.active];
     const a = p.ammo[p.active];
     if (!p.alive || !a || p.reloadEnd || a[0] >= w.mag || a[1] <= 0) return;
-    p.reloadEnd = this.nowS + w.reload;
+    p.reloadEnd = this.nowS + (w.shellReload || w.reload);
     p.scoped = 0;
   }
 
@@ -597,6 +608,7 @@ export class Match {
     }
     if (w.slot !== 'primary' && w.slot !== 'secondary') return false;
     const ammo = p.ammo[p.active];
+    if (p.reloadEnd && w.shellReload && ammo && ammo[0] > 0) p.reloadEnd = 0; // firing interrupts a shell-by-shell reload
     if (!ammo || ammo[0] <= 0 || p.reloadEnd) return false;
     const interval = 60 / w.rpm;
     if (nowS - p.lastShot < interval * (p.bot ? 1 : 0.7)) return false;
@@ -679,6 +691,7 @@ export class Match {
         }
         endT = ev.t;
         impact = { p: [o[0] + d[0] * ev.t, o[1] + d[1] * ev.t, o[2] + d[2] * ev.t], n: ev.normal };
+        if (ev.box?.dyn) this.damageBlock(ev.box, (w.damage?.body || 30) * mult, p);
         break;
       }
       const raw = w.damage[ev.group] * rangeFalloff(w, ev.t) * mult;
@@ -762,7 +775,7 @@ export class Match {
         this.send(killer, { t: 'reward', amount: reward, reason: 'kill' });
       }
     }
-    if (this.ffa) victim.respawnAt = this.nowS + FFA.RESPAWN;
+    if (this.ffa) victim.respawnAt = this.nowS + this.cfg.RESPAWN;
     this.broadcast({
       t: 'kill', k: killer?.id ?? null, v: victim.id, w: weapon, hs: headshot, wb: wallbang,
       a: assister?.id ?? null, p: [victim.body.x, victim.body.y, victim.body.z].map(r2), yaw: victim.yaw,
@@ -770,7 +783,7 @@ export class Match {
     this.sendYou(victim);
     if (killer) this.sendYou(killer);
     this.sendRoster();
-    if (this.ffa && killer && killer.kills >= FFA.FRAG_LIMIT) this.endFFA();
+    if (this.ffa && killer && killer.kills >= this.cfg.FRAG_LIMIT) this.endFFA();
   }
 
   // ─── Grenades ───────────────────────────────────────────────
@@ -881,6 +894,10 @@ export class Match {
         const raw = UTIL.HE_DAMAGE * Math.pow(1 - dist / UTIL.HE_RADIUS, 1.25);
         if (raw >= 1) this.damage(q, owner, raw, 'generic', { id: 'he', armorPen: 0.5 }, { from: pos });
       }
+      for (const b of [...this.blocks.values()]) {
+        const dist = Math.hypot(b.min[0] + 0.5 - pos[0], b.min[1] + 0.5 - pos[1], b.min[2] + 0.5 - pos[2]);
+        if (dist < UTIL.HE_RADIUS) this.damageBlock(b, 160 * (1 - dist / UTIL.HE_RADIUS), owner);
+      }
     } else if (n.type === 'smoke') {
       const s = { id: n.id, x: n.x, y: this.groundBelow(n.x, n.y, n.z), z: n.z, until: nowS + UTIL.SMOKE_DURATION, born: nowS };
       this.smokes.push(s);
@@ -928,6 +945,99 @@ export class Match {
     }
     this.puddles.push({ x, y, z, until: this.nowS + UTIL.PUDDLE_DURATION });
     this.broadcast({ t: 'puddle', p: [x, y, z].map(r2), left: UTIL.PUDDLE_DURATION });
+  }
+
+  // ─── Cow blocks ─────────────────────────────────────────────
+  placeBlock(p, msg) {
+    if (!p.alive || this.phase === 'waiting' || this.phase === 'over' || !(p.blocksLeft > 0)) return;
+    if (this.nowS - (p.lastPlace || 0) < BLOCKS.COOLDOWN) return;
+    const c = Array.isArray(msg.c) ? msg.c.map(Number) : [];
+    if (c.length !== 3 || !c.every(Number.isInteger)) return;
+    const [x, y, z] = c;
+    const B = MAP.bounds;
+    if (y < 0 || y > BLOCKS.MAX_HEIGHT || x < B.minX || x + 1 > B.maxX || z < B.minZ || z + 1 > B.maxZ) return;
+    const eye = this.eye(p);
+    if (Math.hypot(x + 0.5 - eye[0], y + 0.5 - eye[1], z + 0.5 - eye[2]) > BLOCKS.REACH + 1.2) return;
+    const min = [x, y, z], max = [x + 1, y + 1, z + 1];
+    const E = 0.01;
+    let supported = y === 0;
+    const boxes = this.mapObj.boxes;
+    for (const b of boxes) {
+      if (max[0] - E > b.min[0] && min[0] + E < b.max[0] && max[1] - E > b.min[1] && min[1] + E < b.max[1] && max[2] - E > b.min[2] && min[2] + E < b.max[2]) return;
+      if (!supported && max[0] + E > b.min[0] && min[0] - E < b.max[0] && max[1] + E > b.min[1] && min[1] - E < b.max[1] && max[2] + E > b.min[2] && min[2] - E < b.max[2]) supported = true;
+    }
+    if (!supported) return;
+    for (const q of this.players.values()) {
+      if (!q.alive) continue;
+      const qb = q.body, h = playerHeight(qb.crouch), r = PLAYER.RADIUS;
+      if (max[0] > qb.x - r && min[0] < qb.x + r && max[1] > qb.y && min[1] < qb.y + h && max[2] > qb.z - r && min[2] < qb.z + r) return;
+    }
+    const block = { min, max, mat: 'cowblock', dyn: true, id: this.blockId++, owner: p.id, hp: BLOCKS.HP, born: this.nowS };
+    boxes.push(block);
+    this.blocks.set(block.id, block);
+    p.blocksLeft--;
+    p.lastPlace = this.nowS;
+    if (p.blocksLeft <= 0 && p.active === 'cowblock') p.active = p.weapons.primary || p.weapons.secondary || 'hoof';
+    this.broadcast({ t: 'block', op: 'add', id: block.id, c: min, owner: p.id });
+    this.sendYou(p);
+  }
+
+  breakOwnBlock(p, msg) {
+    const b = this.blocks.get(Number(msg.id));
+    if (!p.alive || !b || b.owner !== p.id) return;
+    const eye = this.eye(p);
+    if (Math.hypot(b.min[0] + 0.5 - eye[0], b.min[1] + 0.5 - eye[1], b.min[2] + 0.5 - eye[2]) > BLOCKS.REACH + 1.5) return;
+    this.removeBlock(b.id, p.id);
+    p.blocksLeft = (p.blocksLeft || 0) + 1;
+    this.sendYou(p);
+  }
+
+  damageBlock(b, amount, by) {
+    if (!this.blocks.has(b.id)) return;
+    b.hp -= amount;
+    if (b.hp <= 0) this.removeBlock(b.id, by?.id ?? null);
+  }
+
+  removeBlock(id, by = null) {
+    const b = this.blocks.get(id);
+    if (!b) return;
+    this.blocks.delete(id);
+    const i = this.mapObj.boxes.indexOf(b);
+    if (i >= 0) this.mapObj.boxes.splice(i, 1);
+    this.broadcast({ t: 'block', op: 'del', id, by });
+  }
+
+  clearBlocks() {
+    if (!this.blocks?.size) return;
+    const boxes = this.mapObj.boxes;
+    for (const b of this.blocks.values()) {
+      const i = boxes.indexOf(b);
+      if (i >= 0) boxes.splice(i, 1);
+    }
+    this.blocks.clear();
+    this.broadcast({ t: 'block', op: 'clear' });
+  }
+
+  expireBlocks() {
+    for (const b of [...this.blocks.values()]) if (this.nowS - b.born > BLOCKS.LIFETIME) this.removeBlock(b.id);
+  }
+
+  /** Landing on an enemy's head. The client reports it; the server checks the rewound positions. */
+  onStomp(p, msg) {
+    if (!p.alive || this.phase !== 'live') return;
+    const q = this.players.get(Number(msg.id));
+    if (!q || !q.alive || !this.hostile(p, q)) return;
+    if (this.nowS - (p.lastStomp || 0) < 0.6 || !(Number(msg.vy) < -3)) return;
+    const now = nowMs();
+    const rt = Math.max(now - LAG_COMP_MAX, Math.min(now, Number(msg.rt) || now));
+    const [x, y, z, c] = this.rewind(q, rt);
+    const top = y + playerHeight(c);
+    const b = p.body;
+    if (Math.hypot(b.x - x, b.z - z) > 1.1 || b.y < top - 1.0 || b.y > top + 1.2) return;
+    p.lastStomp = this.nowS;
+    p.protectUntil = 0;
+    this.broadcast({ t: 'stomp', id: p.id, v: q.id, p: [x, top, z].map(r2) });
+    this.damage(q, p, 150, 'head', WEAPONS.stomp, { from: [b.x, b.y, b.z] });
   }
 
   // ─── Bomb (defusal only) ────────────────────────────────────
@@ -1070,11 +1180,14 @@ export class Match {
         const w = WEAPONS[p.active];
         const a = p.ammo[p.active];
         // Reloading still takes time, but the reserve is bottomless.
-        if (a && w) {
-          a[0] = w.mag;
+        if (a && w && w.shellReload) {
+          a[0] = Math.min(w.mag, a[0] + 1);
           a[1] = w.reserve;
+          p.reloadEnd = a[0] < w.mag ? this.nowS + w.shellReload : 0;
+        } else {
+          if (a && w) { a[0] = w.mag; a[1] = w.reserve; }
+          p.reloadEnd = 0;
         }
-        p.reloadEnd = 0;
         this.sendYou(p);
       }
       if (p.hp < 100 && this.nowS - (p.lastDamageT || 0) > REGEN.DELAY) {
@@ -1099,6 +1212,7 @@ export class Match {
     if (this.tickCount % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.sendSnapshot(t);
     if (this.tickCount % 6 === 0) for (const p of this.players.values()) if (!p.bot) this.sendYou(p);
     if (this.tickCount % 60 === 0) this.sendRoster();
+    if (this.tickCount % 30 === 0) this.expireBlocks();
     this.noises = this.noises.filter((n) => this.nowS - n.t < 2);
   }
 
@@ -1107,7 +1221,7 @@ export class Match {
     if (this.phase === 'buy' && nowS >= this.phaseEnd) {
       this.phase = 'live';
       this.liveStart = nowS;
-      this.phaseEnd = nowS + (this.ffa ? FFA.TIME : ROUND.ACTION_TIME);
+      this.phaseEnd = nowS + (this.ffa ? this.cfg.TIME : ROUND.ACTION_TIME);
       this.broadcast({ t: 'round', phase: 'live', round: this.round, score: this.score, mode: this.mode });
     } else if (this.phase === 'live' && this.ffa && nowS >= this.phaseEnd) {
       this.endFFA();
@@ -1192,6 +1306,7 @@ export class Match {
       am: p.ammo, rl: p.reloadEnd ? r2(p.reloadEnd - this.nowS) : 0, use, buy: this.canBuy(p), buyLeft,
       rs: !p.alive && p.respawnAt ? r2(Math.max(0, p.respawnAt - this.nowS)) : 0,
       prot: p.protectUntil > this.nowS,
+      bl: p.blocksLeft || 0,
     });
   }
 

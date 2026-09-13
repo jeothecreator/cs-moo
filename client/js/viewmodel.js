@@ -420,6 +420,13 @@ const BUILDERS = {
     rag.position.y = 0.1;
     b.g.userData.muzzle = null;
   },
+  cowblock(b) {
+    const m = b.m;
+    b.box(0.13, 0.13, 0.13, m.spots, 0, 0.02, { r: 0.012 });
+    b.box(0.03, 0.05, 0.09, m.pink, 0.07, 0.0, { r: 0.012 });
+    for (const x of [-0.03, 0.03]) b.put(new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6), m.polymer), 0.066, 0.05, x);
+    b.g.userData.muzzle = null;
+  },
   bomb(b) {
     const m = b.m;
     b.lathe([[0, 0], [0.06, 0], [0.065, 0.01], [0.065, 0.13], [0.03, 0.17], [0.022, 0.2], [0, 0.2]], m.ceramic, 0, -0.05, { seg: 20 });
@@ -440,7 +447,7 @@ export function buildWeaponMesh(id) {
   return b.done();
 }
 
-export const SMALL_ITEMS = new Set(['udder9', 'deag', 'hoof', 'butter', 'smoke', 'he', 'molotov', 'bomb']);
+export const SMALL_ITEMS = new Set(['udder9', 'deag', 'hoof', 'butter', 'smoke', 'he', 'molotov', 'bomb', 'cowblock']);
 
 // ─── Weapon icons (rendered silhouettes for the HUD) ─────────────
 let iconRenderer = null;
@@ -565,6 +572,11 @@ export class ViewModel {
     this.swingAlt = false;
     this.throwT = 1;
     this.inspectT = 1;
+    this.pumpT = 1;
+    this.placeT = 1;
+    this.drops = [];
+    this.reloadStyle = 'mag';
+    this.magDropped = false;
     this.adsT = 0;
     this.adsPos = new THREE.Vector3();
 
@@ -593,11 +605,14 @@ export class ViewModel {
     const holder = new THREE.Group();
     const gun = buildWeaponMesh(id);
     holder.add(gun);
-    const nade = ['butter', 'smoke', 'he', 'molotov', 'bomb', 'hoof'].includes(id);
+    const nade = ['butter', 'smoke', 'he', 'molotov', 'bomb', 'hoof', 'cowblock'].includes(id);
     holder.add(buildArm(this.team, new THREE.Vector3(0.005, -0.02, 0.02), new THREE.Vector3(0.16, -0.5, 0.5), -0.2));
     if (!nade) {
       const fore = gun.userData.fore.clone().add(new THREE.Vector3(-0.004, -0.028, 0));
-      holder.add(buildArm(this.team, fore, new THREE.Vector3(-0.32, -0.52, 0.28), 0.4));
+      const left = buildArm(this.team, fore, new THREE.Vector3(-0.32, -0.52, 0.28), 0.4);
+      left.userData.base = left.position.clone();
+      holder.userData.leftArm = left;
+      holder.add(left);
     }
     holder.userData.gun = gun;
     this.cache.set(key, holder);
@@ -607,6 +622,7 @@ export class ViewModel {
   setWeapon(id, instant = false) {
     if (this.id === id) return;
     this.id = id;
+    this.resetReloadPose();
     if (this.current) this.root.remove(this.current);
     this.current = this.build(id);
     this.root.add(this.current);
@@ -644,14 +660,22 @@ export class ViewModel {
     this.flashLight.intensity = 2.5;
   }
 
-  reload(dur) { this.reloadT = 0; this.reloadDur = dur; }
+  reload(dur, style = 'mag') {
+    this.resetReloadPose();
+    this.reloadT = 0;
+    this.reloadDur = dur;
+    this.reloadStyle = style;
+    this.magDropped = false;
+  }
+  pump() { this.pumpT = 0; }
+  place() { this.placeT = 0; }
   swing(alt) { this.swingT = 0; this.swingAlt = alt; }
   throwAnim() { this.throwT = 0; }
   inspect() {
     if (this.adsT > 0.05 || this.reloadDur > 0 || this.throwT < 1 || this.swingT < 1) return;
     this.inspectT = 0;
   }
-  cancelReload() { this.reloadDur = 0; }
+  cancelReload() { this.reloadDur = 0; this.resetReloadPose(); }
 
   update(dt, s) {
     this.t += dt;
@@ -705,21 +729,30 @@ export class ViewModel {
     if (this.reloadDur > 0) {
       this.reloadT += dt;
       const p = Math.min(1, this.reloadT / this.reloadDur);
-      const k = Math.sin(p * Math.PI);
-      r.rotation.x += k * 0.3;
-      r.rotation.z += k * 0.55;
-      r.rotation.y -= k * 0.2;
-      r.position.y -= k * 0.04;
-      if (gun.userData.mag && gun.userData.magBase) {
-        const magK = p < 0.5 ? Math.min(1, p * 4) : Math.max(0, 1 - (p - 0.5) * 4);
-        gun.userData.mag.position.y = gun.userData.magBase.y - magK * 0.25;
-        gun.userData.mag.visible = !(p > 0.3 && p < 0.55);
-      }
+      this.animateReload(p, r, gun);
       if (p >= 1) {
         this.reloadDur = 0;
-        if (gun.userData.mag) { gun.userData.mag.position.copy(gun.userData.magBase); gun.userData.mag.visible = true; }
+        this.resetReloadPose();
       }
     }
+    if (this.pumpT < 1) {
+      this.pumpT = Math.min(1, this.pumpT + dt / 0.35);
+      const k = Math.sin(this.pumpT * Math.PI);
+      r.position.z += k * 0.025;
+      r.rotation.x += k * 0.08;
+      const pumpPart = gun.userData.mag;
+      if (pumpPart && gun.userData.magBase) {
+        pumpPart.position.z = gun.userData.magBase.z + k * 0.07;
+        if (this.pumpT >= 1) pumpPart.position.copy(gun.userData.magBase);
+      }
+    }
+    if (this.placeT < 1) {
+      this.placeT = Math.min(1, this.placeT + dt / 0.22);
+      const k = Math.sin(this.placeT * Math.PI);
+      r.position.z -= k * 0.06;
+      r.rotation.x -= k * 0.35;
+    }
+    this.updateDrops(dt);
     if (this.swingT < 1) {
       this.swingT = Math.min(1, this.swingT + dt / (this.swingAlt ? 0.55 : 0.32));
       const k = Math.sin(this.swingT * Math.PI);
@@ -769,6 +802,96 @@ export class ViewModel {
       this.flash.getWorldPosition(this.flashLight.position);
     }
     this.root.visible = !s.hidden;
+  }
+
+  /** Staged reload: tilt → old mag out & dropped → hand fetches new mag → seat → rack. */
+  animateReload(p, r, gun) {
+    const style = this.reloadStyle || 'mag';
+    const left = this.current.userData.leftArm;
+    const mag = gun.userData.mag;
+    const base = gun.userData.magBase;
+    const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    const bump = (a, b, x) => (x > a && x < b ? Math.sin(((x - a) / (b - a)) * Math.PI) : 0);
+    if (style === 'shell') {
+      const tilt = ss(0, 0.2, p) * (1 - ss(0.8, 1, p));
+      r.rotation.z -= tilt * 0.45;
+      r.rotation.x += tilt * 0.12;
+      r.position.y -= tilt * 0.03;
+      if (left?.userData.base) {
+        const push = bump(0.2, 0.85, p);
+        left.position.set(left.userData.base.x, left.userData.base.y - 0.05 * push, left.userData.base.z + 0.08 * push);
+      }
+      r.position.y += bump(0.6, 0.8, p) * 0.01;
+      return;
+    }
+    const pistol = style === 'pistol';
+    const tilt = ss(0, 0.15, p) * (1 - ss(0.86, 1, p));
+    r.rotation.z += tilt * (pistol ? 0.35 : 0.55);
+    r.rotation.x += tilt * 0.22;
+    r.position.y -= tilt * 0.035;
+    r.position.x -= tilt * 0.02;
+    if (mag && base) {
+      if (p < 0.18) {
+        mag.visible = true;
+        mag.position.copy(base);
+        mag.position.y -= ss(0.1, 0.18, p) * 0.03;
+      } else if (p < 0.45) {
+        if (!this.magDropped) this.dropMag(mag);
+        mag.visible = false;
+      } else if (p < 0.7) {
+        const k = ss(0.45, 0.7, p);
+        mag.visible = true;
+        mag.position.set(base.x, base.y - 0.22 * (1 - k), base.z + 0.04 * (1 - k));
+      } else {
+        mag.visible = true;
+        mag.position.copy(base);
+      }
+    }
+    r.position.y += bump(0.68, 0.76, p) * 0.015;
+    if (left?.userData.base) {
+      const reach = bump(0.25, 0.72, p);
+      left.position.set(left.userData.base.x, left.userData.base.y - 0.16 * reach, left.userData.base.z + 0.06 * reach);
+    }
+    const rack = bump(0.76, 0.92, p);
+    r.position.z += rack * (pistol ? 0.02 : 0.035);
+    r.rotation.x -= rack * 0.1;
+  }
+
+  dropMag(mag) {
+    this.magDropped = true;
+    const clone = mag.clone();
+    mag.updateMatrixWorld(true);
+    mag.matrixWorld.decompose(clone.position, clone.quaternion, clone.scale);
+    this.scene.add(clone);
+    this.drops.push({ obj: clone, vy: -0.4, vx: -0.12, spin: 4 + Math.random() * 4, life: 0.7 });
+  }
+
+  updateDrops(dt) {
+    if (!this.drops.length) return;
+    for (const d of this.drops) {
+      d.life -= dt;
+      d.vy -= 3.5 * dt;
+      d.obj.position.y += d.vy * dt;
+      d.obj.position.x += d.vx * dt;
+      d.obj.rotation.x += d.spin * dt;
+    }
+    this.drops = this.drops.filter((d) => {
+      if (d.life > 0) return true;
+      this.scene.remove(d.obj);
+      return false;
+    });
+  }
+
+  resetReloadPose() {
+    const holder = this.current;
+    if (!holder) return;
+    const gun = holder.userData.gun;
+    if (gun.userData.mag && gun.userData.magBase) {
+      gun.userData.mag.position.copy(gun.userData.magBase);
+      gun.userData.mag.visible = true;
+    }
+    const left = holder.userData.leftArm;
+    if (left?.userData.base) left.position.copy(left.userData.base);
   }
 
   muzzleOffset() {

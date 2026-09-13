@@ -1,5 +1,5 @@
 // DOM heads-up display: vitals, ammo, round bar, radar, kill feed, buy menu, scoreboard, chat.
-import { WEAPONS, EQUIPMENT, BUY_MENU, TEAMS, FFA, itemInfo } from '/shared/constants.js';
+import { WEAPONS, EQUIPMENT, BUY_MENU, TEAMS, FFA, itemInfo, modeConfig } from '/shared/constants.js';
 import { MAP } from '/shared/map.js';
 import { weaponIcon } from './viewmodel.js';
 
@@ -57,7 +57,7 @@ export class HUD {
     this.set('wname', this.el.wname, w?.name || '');
     const slash = this.el.reserve.previousElementSibling;
     if (!w || w.mag == null || !w.mag) {
-      this.set('mag', this.el.mag, w?.slot === 'grenade' ? '1' : '∞');
+      this.set('mag', this.el.mag, w?.slot === 'grenade' ? '1' : w?.slot === 'block' ? String(mag) : '∞');
       this.set('res', this.el.reserve, '');
       slash.hidden = true;
       return;
@@ -83,7 +83,7 @@ export class HUD {
   }
 
   setInventory(me) {
-    const key = JSON.stringify([me.pri, me.sec, me.gr, me.bomb, me.act, me.alive]);
+    const key = JSON.stringify([me.pri, me.sec, me.gr, me.bomb, me.act, me.alive, me.blocks]);
     if (this.cache.inv === key) return;
     this.cache.inv = key;
     if (!me.alive) { this.el.inventory.innerHTML = ''; return; }
@@ -95,6 +95,7 @@ export class HUD {
     row(3, me.act === 'hoof', img('hoof'), 'Hoof');
     if (me.gr?.length) row(4, WEAPONS[me.act]?.slot === 'grenade', me.gr.map((g) => img(g, `nade ${g === me.act ? 'sel' : ''}`)).join(''), 'Utility');
     if (me.bomb) row(5, me.act === 'bomb', img('bomb'), 'Bomb');
+    if (me.blocks > 0) row(6, me.act === 'cowblock', img('cowblock'), `Cow Block ×${me.blocks}`);
     this.el.inventory.innerHTML = rows.join('');
   }
 
@@ -126,7 +127,7 @@ export class HUD {
     this.radarImg = this.renderRadarMap();
   }
 
-  setTopbarFFA(phase, secs, mine, lead, rank) {
+  setTopbarFFA(phase, secs, mine, lead, rank, mode = 'ffa') {
     const s = Math.max(0, Math.ceil(secs));
     this.set('timer', this.el.timer, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
     this.el.timer.classList.toggle('warn', phase === 'live' && s <= 30);
@@ -135,7 +136,7 @@ export class HUD {
     this.set('scoreCT', this.el.scoreCT, String(lead?.k ?? 0));
     this.set('lblT', document.getElementById('scoreTLabel'), 'YOU');
     this.set('lblCT', document.getElementById('scoreCTLabel'), lead ? esc(lead.name).slice(0, 10).toUpperCase() : 'LEAD');
-    this.set('round', this.el.round, phase === 'buy' ? 'WARMUP · LOADOUT READY' : phase === 'over' ? 'MATCH OVER' : `RANK #${rank || '—'} · FIRST TO ${FFA.FRAG_LIMIT}`);
+    this.set('round', this.el.round, phase === 'buy' ? 'WARMUP · LOADOUT READY' : phase === 'over' ? 'MATCH OVER' : `RANK #${rank || '—'} · FIRST TO ${modeConfig(mode).FRAG_LIMIT}`);
     this.el.aliveT.hidden = true;
     this.el.aliveCT.hidden = true;
   }
@@ -155,7 +156,7 @@ export class HUD {
     const div = document.createElement('div');
     div.className = `kf ${me ? 'me' : ''}`;
     const k = killer ? `<span class="${ffa ? 'FFA' : killer.team}">${esc(killer.name)}</span>` : '';
-    const wpn = WEAPONS[weapon] ? `<img class="kfi" src="${weaponIcon(weapon)}" alt="${esc(weaponLabel(weapon))}">` : `<span class="wpn">${esc(weaponLabel(weapon))}</span>`;
+    const wpn = WEAPONS[weapon] && WEAPONS[weapon].slot !== 'special' ? `<img class="kfi" src="${weaponIcon(weapon)}" alt="${esc(weaponLabel(weapon))}">` : `<span class="wpn">${esc(weaponLabel(weapon))}</span>`;
     div.innerHTML = `${k}${wpn}${wb ? '<span class="tag" title="wallbang">🧱</span>' : ''}${hs ? '<span class="tag" title="headshot">🎯</span>' : ''}<span class="${ffa ? 'FFA' : victim.team}">${esc(victim.name)}</span>`;
     this.el.killfeed.appendChild(div);
     while (this.el.killfeed.children.length > 6) this.el.killfeed.firstChild.remove();
@@ -255,6 +256,14 @@ export class HUD {
     this.set('ng', this.el.netgraph, `${fps} fps · ${Math.round(ping)} ms`);
   }
 
+  reloadProgress(frac) {
+    const el = document.getElementById('reloadRing');
+    if (!el) return;
+    if (frac == null) { el.hidden = true; return; }
+    el.hidden = false;
+    el.style.setProperty('--p', `${Math.round(Math.min(1, Math.max(0, frac)) * 360)}deg`);
+  }
+
   countdown(text, go = false) {
     const el = document.getElementById('countdown');
     el.textContent = text;
@@ -266,12 +275,13 @@ export class HUD {
 
   roundIntro(round, team, score, mode) {
     const el = document.getElementById('roundIntro');
-    if (mode === 'ffa') {
-      el.querySelector('.ri-round').textContent = 'FREE FOR ALL';
-      el.querySelector('.ri-score .t').textContent = `FIRST TO ${FFA.FRAG_LIMIT}`;
-      el.querySelector('.ri-score .ct').textContent = `${Math.floor(FFA.TIME / 60)}:${String(FFA.TIME % 60).padStart(2, '0')}`;
+    if (mode === 'ffa' || mode === 'duel') {
+      const cfg = modeConfig(mode);
+      el.querySelector('.ri-round').textContent = mode === 'duel' ? '1V1 DUEL' : 'FREE FOR ALL';
+      el.querySelector('.ri-score .t').textContent = `FIRST TO ${cfg.FRAG_LIMIT}`;
+      el.querySelector('.ri-score .ct').textContent = `${Math.floor(cfg.TIME / 60)}:${String(cfg.TIME % 60).padStart(2, '0')}`;
       const side = el.querySelector('.ri-side');
-      side.textContent = 'Everyone is an enemy · Spawn shield is on for a few seconds · Kills earn money · Press B to buy';
+      side.textContent = mode === 'duel' ? 'One opponent · Build cow blocks with 6 · Stomp from above' : 'Everyone is an enemy · Spawn shield is on for a few seconds · Kills earn money · Press B to buy';
       side.className = 'ri-side';
       el.hidden = false;
       el.classList.remove('show');
@@ -448,9 +458,9 @@ export class HUD {
   scoreboard(show, roster, meId, score, round, mode) {
     this.el.scoreboard.hidden = !show;
     if (!show) return;
-    const ffa = mode === 'ffa';
+    const ffa = mode === 'ffa' || mode === 'duel';
     document.querySelector('.sb-team.t').hidden = ffa;
-    this.set('sbTitle', document.getElementById('sbTitleCT'), ffa ? 'FREE FOR ALL' : 'DAIRY GUARD');
+    this.set('sbTitle', document.getElementById('sbTitleCT'), ffa ? (mode === 'duel' ? '1V1 DUEL' : 'FREE FOR ALL') : 'DAIRY GUARD');
     if (ffa) {
       const rows = [...roster].sort((a, b) => b.k - a.k || a.d - b.d);
       const html = rows.map((p, i) => `<tr class="${p.alive ? '' : 'dead'} ${p.id === meId ? 'me' : ''}">
@@ -458,7 +468,7 @@ export class HUD {
         <td>${p.k}</td><td>${p.a}</td><td>${p.d}</td><td></td><td>${p.s}</td><td>${p.bot ? 'BOT' : p.ping}</td></tr>`).join('');
       this.set('sbCT', this.el.sbCT, html, 'innerHTML');
       this.el.sbScoreCT.textContent = rows[0]?.k ?? 0;
-      this.el.sbRound.textContent = `First to ${FFA.FRAG_LIMIT} eliminations`;
+      this.el.sbRound.textContent = `First to ${modeConfig(mode).FRAG_LIMIT} eliminations`;
       return;
     }
     const myTeam = roster.find((p) => p.id === meId)?.team;
