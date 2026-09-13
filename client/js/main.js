@@ -3,6 +3,7 @@ import { WEAPONS, UTIL } from '/shared/constants.js';
 import { MODES } from '/shared/map.js';
 import { Game } from './game.js';
 import { formatRunTime } from './obby.js';
+import { myObbies, inviteLink } from './obbyEditor.js';
 import { HUD } from './hud.js';
 import { AudioEngine } from './audio.js';
 
@@ -242,25 +243,162 @@ $('copyInvite').addEventListener('click', async () => {
   setTimeout(() => { btn.textContent = 'Copy invite link'; }, 1800);
 });
 
-// ─── Solo obby ─────────────────────────────────────────────────
-function updateObbyBest() {
-  const best = Number(localStorage.getItem('csmoo.obbyBest'));
-  $('obbyBestMenu').textContent = best ? formatRunTime(best) : 'No run yet';
+// ─── Solo obby, Obby Creator & community obbies ────────────────
+const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function enterObbyScreen() {
+  document.body.classList.add('obby');
+  $('menu').hidden = true;
+  $('menuError').textContent = '';
 }
 
-$('obbyBtn').addEventListener('click', () => {
+function startOfficialObby() {
+  audio.init();
+  enterObbyScreen();
+  game.startObby();
+  $('clickToPlay').hidden = false;
+}
+
+async function fetchObby(code) {
+  const r = await fetch(`/api/obbies/${encodeURIComponent(String(code).trim().toLowerCase())}`);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || 'Obby not found');
+  return data;
+}
+
+async function playCustomObby(code) {
+  if (!String(code || '').trim()) { $('menuError').textContent = 'Enter an obby code first'; return; }
   audio.init();
   $('menuError').textContent = '';
-  document.body.classList.add('obby');
-  game.startObby();
+  try {
+    const def = await fetchObby(code);
+    enterObbyScreen();
+    game.startObby(def);
+    $('clickToPlay').hidden = false;
+  } catch (err) {
+    $('menuError').textContent = err.message;
+  }
+}
+
+async function openEditor(code = null) {
+  audio.init();
+  $('menuError').textContent = '';
+  let def = null;
+  if (code) {
+    try {
+      const data = await fetchObby(code);
+      def = { ...data, editKey: myObbies().find((o) => o.code === data.code)?.editKey || null };
+    } catch (err) {
+      $('menuError').textContent = err.message;
+      return;
+    }
+  }
+  document.body.classList.add('obby', 'editor');
   $('menu').hidden = true;
-  $('clickToPlay').hidden = false;
-});
+  game.startEditor(def);
+}
+
+function renderObbyBoard(el, rows) {
+  if (!el) return;
+  el.innerHTML = rows.length ? '' : '<div class="ol-empty">No runs yet — be the first!</div>';
+  rows.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = `ol-row ${i < 3 ? `top${i + 1}` : ''}`;
+    row.innerHTML = `<span><i>#${i + 1}</i>${escapeHtml(r.name)}</span><b>${r.finished ? `🏁 ${formatRunTime(r.time)}` : `${Math.floor(r.distance)} m`}</b>`;
+    el.appendChild(row);
+  });
+}
+
+function renderMyObbies() {
+  const el = $('myObbyList');
+  const list = myObbies();
+  el.innerHTML = list.length ? '' : '<div class="ol-empty">Obbies you publish show up here</div>';
+  for (const o of list) {
+    const row = document.createElement('div');
+    row.className = 'ol-row';
+    row.innerHTML = `<span><b>${escapeHtml(o.name)}</b><small>${o.code.toUpperCase()}</small></span><span class="ol-actions"><button data-a="play">Play</button><button data-a="edit">Edit</button><button data-a="copy">Invite</button></span>`;
+    row.querySelector('[data-a=play]').onclick = () => playCustomObby(o.code);
+    row.querySelector('[data-a=edit]').onclick = () => openEditor(o.code);
+    row.querySelector('[data-a=copy]').onclick = async (e) => {
+      try {
+        await navigator.clipboard.writeText(inviteLink(o.code));
+        e.target.textContent = 'Copied!';
+      } catch {
+        e.target.textContent = o.code.toUpperCase();
+      }
+      setTimeout(() => { e.target.textContent = 'Invite'; }, 1600);
+    };
+    el.appendChild(row);
+  }
+}
+
+async function updateObbyBest() {
+  const best = Number(localStorage.getItem('csmoo.obbyBest'));
+  const dist = Number(localStorage.getItem('csmoo.obbyBestDist'));
+  $('obbyBestMenu').textContent = best ? formatRunTime(best) : dist ? `${Math.floor(dist)} m` : 'No run yet';
+  renderMyObbies();
+  try {
+    const data = await (await fetch('/api/leaderboard')).json();
+    renderObbyBoard($('obbyLeaderboardList'), data.obby.slice(0, 10));
+  } catch {
+    $('obbyLeaderboardList').innerHTML = '<div class="ol-empty">Leaderboard unavailable</div>';
+  }
+  try {
+    const list = await (await fetch('/api/obbies')).json();
+    const el = $('communityList');
+    el.innerHTML = list.length ? '' : '<div class="ol-empty">No community obbies yet — build the first one!</div>';
+    for (const o of list) {
+      const row = document.createElement('button');
+      row.className = 'ol-row clickable';
+      row.innerHTML = `<span><b>${escapeHtml(o.name)}</b><small>by ${escapeHtml(o.author)}</small></span><em>${o.count} blocks · ▶ ${o.plays}</em>`;
+      row.onclick = () => playCustomObby(o.code);
+      el.appendChild(row);
+    }
+  } catch {
+    $('communityList').innerHTML = '<div class="ol-empty">Community list unavailable</div>';
+  }
+}
+
+async function refreshLeaderboards() {
+  try {
+    const data = await (await fetch('/api/leaderboard')).json();
+    const kills = $('lbKills');
+    kills.innerHTML = data.kills.length ? '' : '<div class="ol-empty">No kills recorded yet — jump into a match!</div>';
+    data.kills.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = `ol-row ${i < 3 ? `top${i + 1}` : ''}`;
+      row.innerHTML = `<span><i>#${i + 1}</i>${escapeHtml(r.name)}</span><b>${r.kills} ${r.kills === 1 ? 'kill' : 'kills'}</b>`;
+      kills.appendChild(row);
+    });
+    renderObbyBoard($('lbObby'), data.obby);
+  } catch {
+    $('lbKills').innerHTML = '<div class="ol-empty">Leaderboards unavailable</div>';
+    $('lbObby').innerHTML = '<div class="ol-empty">Leaderboards unavailable</div>';
+  }
+}
+
+$('obbyBtn').addEventListener('click', startOfficialObby);
+$('obbyCreateBtn').addEventListener('click', () => openEditor());
+$('obbyCodeBtn').addEventListener('click', () => playCustomObby($('obbyCodeInput').value));
+$('obbyCodeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('obbyCodeBtn').click(); });
+$('obbyRefresh').addEventListener('click', updateObbyBest);
+$('lbRefresh').addEventListener('click', refreshLeaderboards);
+document.querySelector('.nav-btn[data-tab="leaders"]').addEventListener('click', refreshLeaderboards);
 $('obAgain').addEventListener('click', () => {
   game.obby.restart();
   game.lockPointer();
 });
-$('obMenu').addEventListener('click', () => backToMenu());
+$('obMenu').addEventListener('click', () => {
+  if (game.obby?.fromEditor) game.resumeEditor();
+  else backToMenu();
+});
+
+const invitedObby = new URLSearchParams(location.search).get('obby');
+if (invitedObby) {
+  selectMode('obby', { preview: false });
+  $('obbyCodeInput').value = invitedObby.toUpperCase();
+  $('menuError').textContent = `You've been invited to obby ${invitedObby.toUpperCase()} — press Play!`;
+}
 
 $('clickToPlay').addEventListener('click', () => {
   audio.init();
@@ -282,7 +420,7 @@ pauseObserver.observe($('pause'), { attributes: true, attributeFilter: ['hidden'
 
 function backToMenu(reason) {
   game.leave();
-  document.body.classList.remove('obby');
+  document.body.classList.remove('obby', 'editor');
   updateObbyBest();
   for (const id of ['pause', 'teamSelect', 'clickToPlay', 'buymenu', 'scoreboard', 'matchEnd']) $(id).hidden = true;
   $('menu').hidden = false;

@@ -14,6 +14,7 @@ import { Net } from './net.js';
 import { labelTexture } from './textures.js';
 import { weaponLabel } from './hud.js';
 import { Obby } from './obby.js';
+import { ObbyEditor } from './obbyEditor.js';
 
 const TAU = Math.PI * 2;
 const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
@@ -78,6 +79,9 @@ export class Game {
   resetState() {
     this.me = { id: 0, team: 'T', alive: false, hp: 100, ar: 0, hm: false, m: 800, pri: null, sec: 'udder9', gr: [], bomb: false, kit: false, act: 'udder9', am: {}, use: null, buy: false, buyLeft: 0 };
     this.body = newBody(0, 0, 50);
+    this.dashUntil = 0;
+    this.dashReadyAt = 0;
+    this.airDashUsed = false;
     this.yaw = 0;
     this.pitch = 0;
     this.recoilIndex = 0;
@@ -187,16 +191,35 @@ export class Game {
     return welcome;
   }
 
-  startObby() {
+  startObby(def = null, opts = {}) {
     this.resetState();
     this.obby ??= new Obby(this);
+    if (this.editor?.active) this.editor.suspend();
     this.mode = 'obby';
     this.hud.show(false);
-    this.obby.start();
+    this.obby.start(def, opts);
+  }
+
+  startEditor(def = null) {
+    this.resetState();
+    this.obby ??= new Obby(this);
+    if (this.obby.active) this.obby.stop();
+    this.editor ??= new ObbyEditor(this);
+    this.mode = 'editor';
+    this.hud.show(false);
+    this.editor.start(def);
+  }
+
+  resumeEditor() {
+    if (!this.editor) return;
+    if (this.obby?.active) this.obby.stop();
+    this.mode = 'editor';
+    this.editor.resume();
   }
 
   leave() {
     if (this.obby?.active) this.obby.stop();
+    if (this.editor?.active || this.editor?.suspended) this.editor.stop();
     this.net?.close();
     this.net = null;
     for (const e of this.entities.values()) this.scene.remove(e.model.root);
@@ -224,7 +247,8 @@ export class Game {
   // ─── Input ─────────────────────────────────────────────────
   bindInput() {
     document.addEventListener('pointerlockchange', () => {
-      if (this.mode !== 'playing' && this.mode !== 'obby') return;
+      if (!['playing', 'obby', 'editor'].includes(this.mode)) return;
+      if (this.mode === 'editor') return;
       if (this.mode === 'obby' && this.obby?.finished && !this.locked) return;
       if (this.locked) {
         document.getElementById('pause').hidden = true;
@@ -251,10 +275,15 @@ export class Game {
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
-      if (this.mode !== 'playing' && this.mode !== 'obby') return;
+      if (!['playing', 'obby', 'editor'].includes(this.mode)) return;
       this.audio.init();
       if (!this.locked) { this.lockPointer(); return; }
       if (this.mode === 'obby') return;
+      if (this.mode === 'editor') {
+        if (e.button === 0) this.editor.place();
+        if (e.button === 2) this.editor.remove();
+        return;
+      }
       if (e.button === 0) { this.mouse.left = true; this.onPrimaryDown(); }
       if (e.button === 2) { this.mouse.right = true; this.onSecondaryDown(); }
     });
@@ -264,17 +293,30 @@ export class Game {
     });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('wheel', (e) => {
+      if (this.mode === 'editor') {
+        if (this.locked) this.editor.cycle(e.deltaY > 0 ? 1 : -1);
+        return;
+      }
       if (!this.locked || !this.me.alive) return;
       this.cycleWeapon(e.deltaY > 0 ? 1 : -1);
     });
 
     document.addEventListener('keydown', (e) => {
+      if (this.mode === 'editor') {
+        if (e.target?.tagName === 'INPUT') return;
+        if (!this.locked && !(e.code === 'KeyZ' && (e.ctrlKey || e.metaKey))) return;
+        this.keys.add(e.code);
+        this.editor.onKey(e);
+        if (e.code === 'Space') e.preventDefault();
+        return;
+      }
       if (this.mode === 'obby') {
         if (!this.locked) return;
         this.keys.add(e.code);
         if (e.code === 'Space') this.jumpQueued = performance.now();
         if (e.code === 'KeyR' && !e.repeat) this.obby.respawn(true);
         if (e.code === 'KeyE' && !e.repeat) this.obby.dash();
+        if (e.code === 'KeyT' && !e.repeat && this.obby.fromEditor) this.resumeEditor();
         return;
       }
       if (this.mode !== 'playing' || this.hud.chatOpen) return;
@@ -297,7 +339,7 @@ export class Game {
         case 'Digit6': case 'KeyX': this.switchTo('cowblock'); break;
         case 'KeyQ': this.switchTo(this.lastWeapon); break;
         case 'KeyB': this.openBuy(); break;
-        case 'KeyE': this.setUse(true); break;
+        case 'KeyE': this.setUse(true); this.dash(); break;
         case 'KeyG': if (this.me.act === 'bomb') this.net?.send({ t: 'drop' }); break;
         case 'KeyF': if (this.me.alive && !this.scoped) this.vm.inspect(); break;
         case 'KeyY': case 'KeyU': this.openChat(e.code === 'KeyU' && !this.ffaLike); e.preventDefault(); break;
@@ -357,6 +399,30 @@ export class Game {
     if (on === this.useHeld) return;
     this.useHeld = on;
     this.net?.send({ t: 'use', on });
+  }
+
+  dash() {
+    if (this.mode !== 'playing' || !this.me.alive || this.phase === 'buy') return;
+    const now = performance.now() / 1000;
+    const b = this.body;
+    if (now < (this.dashReadyAt || 0) || this.airDashUsed) return;
+    const k = this.keys;
+    const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+    const str = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    let dx = -Math.sin(this.yaw) * fwd + Math.cos(this.yaw) * str;
+    let dz = -Math.cos(this.yaw) * fwd - Math.sin(this.yaw) * str;
+    if (!dx && !dz) { dx = -Math.sin(this.yaw); dz = -Math.cos(this.yaw); }
+    const l = Math.hypot(dx, dz) || 1;
+    dx /= l; dz /= l;
+    const DASH_SPEED = 13;
+    b.vx = dx * DASH_SPEED;
+    b.vz = dz * DASH_SPEED;
+    b.vy = b.onGround ? 3.4 : Math.max(b.vy, 2.8);
+    b.onGround = false;
+    this.airDashUsed = true;
+    this.dashUntil = now + 0.32;
+    this.dashReadyAt = now + 0.8;
+    this.audio.swing(null);
   }
 
   // ─── Weapons ───────────────────────────────────────────────
@@ -1133,8 +1199,9 @@ export class Game {
     this.world.update(dt);
     this.effects.update(dt);
 
-    if (this.mode === 'obby') {
-      this.obby.update(dt);
+    if (this.mode === 'obby' || this.mode === 'editor') {
+      if (this.mode === 'obby') this.obby.update(dt);
+      else this.editor.update(dt);
       this.renderer.clear();
       this.renderer.render(this.obby.scene, this.camera);
       return;
@@ -1192,8 +1259,11 @@ export class Game {
       const crouch = k.has('ControlLeft') || k.has('KeyC');
       const slick = this.effects.onPuddle(this.body.x, this.body.y, this.body.z);
       const slow = this.effects.inFire(this.body.x, this.body.y, this.body.z);
+      const dashing = performance.now() / 1000 < (this.dashUntil || 0);
+      if (dashing) { wx = 0; wz = 0; }
       const vyBefore = this.body.vy;
-      stepBody(this.body, { wx, wz, jump, walk, crouch: crouch && !frozen ? true : crouch, speedMult, slick, slow }, dt);
+      stepBody(this.body, { wx, wz, jump: jump && !dashing, walk, crouch: crouch && !frozen ? true : crouch, speedMult, slick: slick || dashing, slow, noCap: dashing }, dt);
+      if (this.body.onGround && performance.now() / 1000 > (this.dashUntil || 0)) this.airDashUsed = false;
       this.checkStomp(vyBefore);
       if (this.body.jumped) { this.body.jumped = false; this.jumpQueued = 0; }
       if (this.body.landedSpeed > 6) {

@@ -27,6 +27,7 @@
       </div>
       <nav class="menu-nav">
         <button class="nav-btn active" data-tab="play">Play</button>
+        <button class="nav-btn" data-tab="leaders">Leaderboards</button>
         <button class="nav-btn" data-tab="arsenal">Arsenal</button>
         <button class="nav-btn" data-tab="settings">Settings</button>
         <button class="nav-btn" data-tab="howto">How to play</button>
@@ -88,16 +89,36 @@
             <div class="oc-main">
               <div class="oc-title">Udder Chaos Obby</div>
               <div class="oc-stages">
-                <span>🌾 Pasture Hop</span><span>🧈 Churn Spinners</span><span>🥛 Milk Tank Express</span>
-                <span>🧀 Cheese Collapse</span><span>🌀 Hay Bounce</span><span>🍼 Udder Tower</span>
+                <span>🌾 Pasture Hop</span><span>🧈 Churn Spinners</span><span>🥛 Milk Tank Express</span><span>🧀 Cheese Collapse</span>
+                <span>🌀 Hay Bounce</span><span>🍼 Udder Tower</span><span>🪵 Barn Rafters</span><span>🐂 Hay Bale Stampede</span>
               </div>
-              <div class="oc-tips">E to dash (jump + dash for distance) · Checkpoints save your progress · R returns to the last checkpoint · Falling in the milk costs time</div>
+              <div class="oc-tips">E to dash (jump + dash for distance) · Checkpoints save your progress · R returns to the last checkpoint</div>
             </div>
-            <div class="oc-best"><span>Personal best</span><b id="obbyBestMenu">—</b></div>
+            <div class="oc-best"><span>Your best</span><b id="obbyBestMenu">—</b></div>
           </div>
-          <button id="obbyBtn" class="primary-btn">Start run</button>
+          <div class="obby-buttons">
+            <button id="obbyBtn" class="primary-btn">Play Udder Chaos</button>
+            <button id="obbyCreateBtn" class="ghost-btn">🛠 Obby Creator</button>
+            <div class="code-join">
+              <input id="obbyCodeInput" maxlength="8" placeholder="OBBY CODE" autocomplete="off" spellcheck="false" />
+              <button id="obbyCodeBtn" class="ghost-btn">Play</button>
+            </div>
+          </div>
+          <div class="obby-columns">
+            <div class="obby-col"><div class="ol-title">🏆 Distance leaderboard</div><div id="obbyLeaderboardList" class="ol-list"></div></div>
+            <div class="obby-col"><div class="ol-title">🧱 Community obbies <button class="link" id="obbyRefresh">Refresh</button></div><div id="communityList" class="ol-list"></div></div>
+            <div class="obby-col"><div class="ol-title">📁 My obbies</div><div id="myObbyList" class="ol-list"></div></div>
+          </div>
         </div>
         <div id="menuError" class="menu-error"></div>
+      </section>
+
+      <section class="menu-panel" data-panel="leaders" hidden>
+        <div class="lb-head"><h2>Leaderboards</h2><button class="link" id="lbRefresh">Refresh</button></div>
+        <div class="lb-grid">
+          <div class="lb-card"><div class="lb-title">🎯 Most kills <small>Real players · all multiplayer modes</small></div><div id="lbKills" class="ol-list tall"></div></div>
+          <div class="lb-card"><div class="lb-title">🏁 Obby distance <small>Udder Chaos · finishers ranked by time</small></div><div id="lbObby" class="ol-list tall"></div></div>
+        </div>
       </section>
 
       <section class="menu-panel" data-panel="arsenal" hidden>
@@ -188,6 +209,33 @@
     <div id="chat"><div id="chatLog"></div><div class="chat-input-row" hidden><span id="chatMode">ALL</span><input id="chatInput" maxlength="140" autocomplete="off" /></div></div>
   </div>
 
+  <div id="editorHud" hidden>
+    <div class="ed-top">
+      <span class="ed-logo">🛠 Obby Creator</span>
+      <input id="edName" maxlength="32" placeholder="Name your obby" />
+      <span class="ed-count" id="edCount">0 blocks</span>
+      <button class="ed-btn" id="edUndo">↶ Undo</button>
+      <button class="ed-btn" id="edNew">New</button>
+      <button class="ed-btn" id="edTest">▶ Test</button>
+      <button class="ed-btn primary" id="edSave">💾 Save &amp; share</button>
+      <button class="ed-btn" id="edExit">Exit</button>
+    </div>
+    <div class="ed-status" id="edStatus"></div>
+    <div class="ed-palette" id="edPalette"></div>
+    <div class="ed-cross" id="edCross" hidden>+</div>
+    <div class="ed-help">Click the world to build · <kbd>Left</kbd> place · <kbd>Right</kbd> remove · <kbd>1-9 0 - =</kbd> / wheel block · <kbd>Q</kbd> pick · <kbd>WASD</kbd> fly · <kbd>Space</kbd>/<kbd>Shift</kbd> up/down · <kbd>T</kbd> test · <kbd>Ctrl+Z</kbd> undo · <kbd>Esc</kbd> cursor</div>
+    <div class="ed-toast" id="edToast"></div>
+    <div class="ed-share" id="edShare" hidden>
+      <div class="es-card">
+        <div class="es-title">Obby published! 🎉</div>
+        <div class="es-sub">Share the code or link — friends can play it from the Obby tab.</div>
+        <div class="es-code" id="edShareCode"></div>
+        <div class="es-link" id="edShareLink"></div>
+        <div class="es-btns"><button class="primary-btn" id="edCopy">Copy invite link</button><button class="ghost-btn" id="edShareClose">Keep building</button></div>
+      </div>
+    </div>
+  </div>
+
   <div id="obbyHud" hidden>
     <div class="ob-top">
       <div class="ob-stage" id="obStage">Stage 1 · Pasture Hop</div>
@@ -196,12 +244,12 @@
     </div>
     <div class="ob-progress"><i id="obProgress"></i></div>
     <div id="obToast" class="ob-toast"></div>
-    <div class="ob-help"><kbd>W A S D</kbd> move · <kbd>Space</kbd> jump · <kbd>E</kbd> dash · <kbd>R</kbd> last checkpoint · <kbd>Esc</kbd> pause</div>
+    <div class="ob-help" id="obHelp"><kbd>W A S D</kbd> move · <kbd>Space</kbd> jump · <kbd>E</kbd> dash · <kbd>R</kbd> last checkpoint · <kbd>Esc</kbd> pause</div>
     <div class="ob-credit">Made by Jeo Metelitsa</div>
     <div id="obFade"></div>
     <div id="obFinish" hidden>
       <div class="obf-bell">🔔</div>
-      <div class="obf-title">Course complete!</div>
+      <div class="obf-title" id="obfTitle">Course complete!</div>
       <div class="obf-time" id="obfTime">0:00.00</div>
       <div class="obf-sub" id="obfSub"></div>
       <div class="obf-btns"><button class="primary-btn" id="obAgain">Run again</button><button class="ghost-btn" id="obMenu">Main menu</button></div>

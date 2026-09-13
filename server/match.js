@@ -769,6 +769,7 @@ export class Match {
       } else {
         killer.kills++;
         killer.roundKills++;
+        if (!killer.bot) Match.recordKill?.(killer.name);
         killer.score += 2;
         const reward = WEAPONS[weapon]?.killReward ?? 300;
         killer.money = Math.min(ECON.MAX, killer.money + reward);
