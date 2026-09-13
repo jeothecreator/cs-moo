@@ -274,6 +274,7 @@ export class Game {
         this.keys.add(e.code);
         if (e.code === 'Space') this.jumpQueued = performance.now();
         if (e.code === 'KeyR' && !e.repeat) this.obby.respawn(true);
+        if (e.code === 'KeyE' && !e.repeat) this.obby.dash();
         return;
       }
       if (this.mode !== 'playing' || this.hud.chatOpen) return;

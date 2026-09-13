@@ -440,3 +440,6 @@ body.obby #teamBtn, body.obby #inviteBox { display: none; }
 .obf-credit { margin-top: 20px; color: var(--muted); font-weight: 700; letter-spacing: 2px; }
 .confetti { position: absolute; top: -24px; width: 10px; height: 16px; border-radius: 2px; animation-name: confettifall; animation-timing-function: linear; animation-fill-mode: forwards; pointer-events: none; }
 @keyframes confettifall { to { top: 110vh; transform: rotate(900deg) translateX(40px); } }
+
+.ob-dash { color: rgba(255,255,255,.4); transition: color .15s; }
+.ob-dash.ready { color: #ffd84a; }

@@ -60,6 +60,7 @@ export class Obby {
       finish: document.getElementById('obFinish'),
       finishTime: document.getElementById('obfTime'),
       finishSub: document.getElementById('obfSub'),
+      dash: document.getElementById('obDash'),
     };
   }
 
@@ -418,6 +419,9 @@ export class Obby {
     this.lastGroundT = 0;
     this.facing = yaw ?? this.facing ?? 0;
     this.knockUntil = 0;
+    this.dashUntil = 0;
+    this.dashReadyAt = 0;
+    this.airDashUsed = false;
   }
 
   respawn(manual = false) {
@@ -507,6 +511,7 @@ export class Obby {
       const l = Math.hypot(wx, wz);
       if (l > 0) { wx /= l; wz /= l; }
       if (b.onGround) this.lastGroundT = now;
+      if (b.onGround && now > this.dashUntil) this.airDashUsed = false;
       const wantJump = performance.now() - game.jumpQueued < 140;
       if (wantJump && !b.onGround && now - this.lastGroundT < 0.12 && b.vy <= 0.5) {
         b.vy = PLAYER.JUMP_V;
@@ -514,13 +519,14 @@ export class Obby {
         this.lastGroundT = 0;
       }
       const knocked = now < this.knockUntil;
+      const dashing = now < this.dashUntil;
       stepBody(b, {
-        wx: knocked ? 0 : wx, wz: knocked ? 0 : wz, jump: wantJump && b.onGround, walk: k.has('ShiftLeft'),
-        crouch: false, speedMult: 1.05, airControl: true,
+        wx: knocked || dashing ? 0 : wx, wz: knocked || dashing ? 0 : wz, jump: wantJump && b.onGround && !dashing, walk: k.has('ShiftLeft'),
+        crouch: false, speedMult: 1.05, airControl: !dashing, slick: dashing, noCap: dashing,
       }, dt, this.boxes);
       if (b.jumped) { b.jumped = false; game.jumpQueued = 0; }
       if (b.landedSpeed > 9) game.audio.land(null);
-      if (l > 0 && !knocked) this.facing = Math.atan2(-wx, -wz);
+      if (l > 0 && !knocked && !dashing) this.facing = Math.atan2(-wx, -wz);
       if (!this.running && (l > 0 || !b.onGround)) this.running = true;
       if (this.running) this.time += dt;
     }
@@ -579,6 +585,12 @@ export class Obby {
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     this.cow.root.rotation.y = cur + diff * Math.min(1, dt * 12);
     this.cow.update(dt, { speed, crouch: 0, pitch: 0, onGround: b.onGround });
+    // dive pose + puff trail while dashing
+    const diveK = now < this.dashUntil ? 1 : Math.max(0, 1 - (now - this.dashUntil) / 0.25);
+    this.cow.pose.rotation.x = -1.05 * diveK;
+    this.cow.pose.position.y = 0.4 * diveK;
+    if (now < this.dashUntil) this.spawnPuff(b.x, b.y + 0.4, b.z);
+    this.updatePuffs(dt);
     for (const s of this.statues) s.update(dt, { speed: 0, crouch: 0, pitch: Math.sin(this.clock) * 0.2, onGround: true });
 
     // scenery motion
@@ -607,6 +619,57 @@ export class Obby {
     this.sun.target.position.set(b.x, b.y, b.z);
 
     this.updateHud();
+  }
+
+  /** Stumble-Guys-style dive: E dashes forward, once per airtime (jump then dash works). */
+  dash() {
+    if (!this.active || this.finished || !this.body) return;
+    const now = performance.now() / 1000;
+    const b = this.body;
+    if (now < this.dashReadyAt || now < this.knockUntil || this.airDashUsed) return;
+    const k = this.game.keys;
+    const yaw = this.game.yaw;
+    const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+    const str = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    let dx = -Math.sin(yaw) * fwd + Math.cos(yaw) * str;
+    let dz = -Math.cos(yaw) * fwd - Math.sin(yaw) * str;
+    if (!dx && !dz) { dx = -Math.sin(this.facing); dz = -Math.cos(this.facing); }
+    const l = Math.hypot(dx, dz) || 1;
+    dx /= l; dz /= l;
+    const DASH_SPEED = 13;
+    b.vx = dx * DASH_SPEED;
+    b.vz = dz * DASH_SPEED;
+    b.vy = b.onGround ? 3.4 : Math.max(b.vy, 2.8);
+    b.onGround = false;
+    this.airDashUsed = true;
+    this.facing = Math.atan2(-dx, -dz);
+    this.dashUntil = now + 0.32;
+    this.dashReadyAt = now + 0.8;
+    this.running = true;
+    this.game.audio.swing(null);
+  }
+
+  spawnPuff(x, y, z) {
+    this.puffs ??= [];
+    this.puffGeo ??= new THREE.SphereGeometry(0.22, 8, 6);
+    if (this.puffs.length > 40) return;
+    const m = new THREE.Mesh(this.puffGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }));
+    m.position.set(x + (Math.random() - 0.5) * 0.4, y + (Math.random() - 0.5) * 0.3, z + (Math.random() - 0.5) * 0.4);
+    this.scene.add(m);
+    this.puffs.push({ m, life: 0.45 });
+  }
+
+  updatePuffs(dt) {
+    if (!this.puffs?.length) return;
+    this.puffs = this.puffs.filter((p) => {
+      p.life -= dt;
+      p.m.scale.setScalar(1 + (0.45 - p.life) * 3);
+      p.m.material.opacity = Math.max(0, p.life / 0.45) * 0.7;
+      if (p.life > 0) return true;
+      this.scene.remove(p.m);
+      p.m.material.dispose();
+      return false;
+    });
   }
 
   finish() {
@@ -650,6 +713,10 @@ export class Obby {
     this.set('deaths', `💦 ${this.deaths}`);
     this.set('check', `🚩 ${this.checkpointIndex}/${this.checkpoints.length - 1}`);
     this.set('best', `🏆 ${this.best ? formatRunTime(this.best) : '—'}`);
+    const tNow = performance.now() / 1000;
+    const dashReady = tNow >= (this.dashReadyAt || 0) && !this.airDashUsed;
+    this.set('dash', dashReady ? '⚡ DASH' : '⚡ …');
+    this.el.dash.classList.toggle('ready', dashReady);
     const total = Math.abs(this.finalZ);
     const along = Math.min(1, Math.max(0, -this.body.z / total));
     const height = Math.min(1, Math.max(0, (this.body.y - (BASE + 12.5)) / 10.8));

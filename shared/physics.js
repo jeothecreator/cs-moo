@@ -126,7 +126,7 @@ export function stepBody(s, input, dtTotal, boxes = MAP.boxes) {
       // soft cap on bunny-hop speed
       const hs = Math.hypot(s.vx, s.vz);
       const cap = PLAYER.SPEED * 1.45;
-      if (hs > cap) { s.vx *= cap / hs; s.vz *= cap / hs; }
+      if (!input.noCap && hs > cap) { s.vx *= cap / hs; s.vz *= cap / hs; }
     }
 
     s.vy -= PLAYER.GRAVITY * dt;
