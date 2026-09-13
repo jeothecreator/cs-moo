@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CS:Moo — Counter-Strike: Bovine Operations</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐄</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Bebas+Neue&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    { "imports": { "three": "/lib/three/three.module.js", "three/addons/": "/lib/three-addons/" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- ═══════════════ MAIN MENU ═══════════════ -->
+  <div id="menu" class="screen">
+    <div class="menu-vignette"></div>
+    <div class="menu-left">
+      <div class="logo">
+        <div class="logo-cs">CS<span>:</span>MOO</div>
+        <div class="logo-sub">COUNTER-STRIKE · BOVINE OPERATIONS</div>
+      </div>
+      <nav class="menu-nav">
+        <button class="nav-btn active" data-tab="play">Play</button>
+        <button class="nav-btn" data-tab="arsenal">Arsenal</button>
+        <button class="nav-btn" data-tab="settings">Settings</button>
+        <button class="nav-btn" data-tab="howto">How to play</button>
+      </nav>
+      <div class="menu-foot">Defusal · Free-for-all · Play in your browser</div>
+    </div>
+
+    <div class="menu-panel" data-panel="play">
+      <h2>Deploy</h2>
+      <label class="field"><span>Callsign</span><input id="nameInput" maxlength="16" placeholder="Enter your name" /></label>
+      <div class="mode-pick">
+        <button class="mode-card" data-mode="defusal"><div class="mc-title">Defusal</div><div class="mc-map">de_barnyard</div><div class="mc-desc">5v5 · Plant or defuse the Sour Milk Bomb</div></button>
+        <button class="mode-card" data-mode="ffa"><div class="mc-title">Free-for-all</div><div class="mc-map">dm_creamery</div><div class="mc-desc">Everyone vs everyone · First to 20 kills</div></button>
+      </div>
+      <div class="team-pick">
+        <button class="team-card t" data-team="T"><div class="tc-emblem">🐂</div><div class="tc-name">Rogue Bulls</div><div class="tc-role">Attackers · Plant the bomb</div></button>
+        <button class="team-card auto selected" data-team="auto"><div class="tc-emblem">🎲</div><div class="tc-name">Auto-assign</div><div class="tc-role">Balance the teams</div></button>
+        <button class="team-card ct" data-team="CT"><div class="tc-emblem">🐄</div><div class="tc-name">Dairy Guard</div><div class="tc-role">Defenders · Protect the sites</div></button>
+      </div>
+      <button id="playBtn" class="primary-btn">Quick play · Public</button>
+      <div class="mp-row">
+        <button id="createBtn" class="ghost-btn">Create private room</button>
+        <div class="code-join">
+          <input id="codeInput" maxlength="20" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
+          <button id="codeBtn" class="ghost-btn">Join</button>
+        </div>
+      </div>
+      <div id="menuError" class="menu-error"></div>
+      <div class="rooms"><div class="rooms-head"><span>Public servers</span><button id="refreshRooms" class="link">Refresh</button></div><div id="roomList" class="room-list"></div></div>
+    </div>
+
+    <div class="menu-panel" data-panel="arsenal" hidden>
+      <h2>Dairy Arsenal</h2>
+      <div id="arsenalList" class="arsenal"></div>
+    </div>
+
+    <div class="menu-panel" data-panel="settings" hidden>
+      <h2>Settings</h2>
+      <div id="settingsForm" class="settings"></div>
+    </div>
+
+    <div class="menu-panel" data-panel="howto" hidden>
+      <h2>How to play</h2>
+      <div class="howto">
+        <p><b>Rogue Bulls</b> plant the Sour Milk Bomb at site <b>A</b> or <b>B</b>. <b>Dairy Guard</b> stop the plant or defuse it. Wipe the other team to win the round. First team to <b>8</b> rounds wins; sides swap at halftime.</p>
+        <p><b>Free-for-all</b> is a smaller 6-cow deathmatch on dm_creamery. First to <b>20</b> kills wins. You get a short spawn shield — use it to get cover before you shoot.</p>
+        <p>Earn <b>Gallons ($)</b> from kills and rounds, then spend them during the buy phase. In free-for-all every kill pays out too, you can buy anywhere, and guns you buy stay with you when you respawn. Play with friends using <b>Create private room</b> and share the code.</p>
+        <div class="keys">
+          <div><kbd>W A S D</kbd> Move</div><div><kbd>Mouse</kbd> Aim / Fire</div>
+          <div><kbd>Space</kbd> Jump</div><div><kbd>Right click</kbd> Scope / heavy swing / lob</div>
+          <div><kbd>Ctrl</kbd> / <kbd>C</kbd> Crouch</div><div><kbd>Shift</kbd> Walk (silent)</div>
+          <div><kbd>R</kbd> Reload</div><div><kbd>1-5</kbd> / <kbd>Wheel</kbd> Weapons</div>
+          <div><kbd>Q</kbd> Last weapon</div><div><kbd>F</kbd> Inspect weapon</div>
+          <div><kbd>B</kbd> Buy menu</div>
+          <div><kbd>E</kbd> Plant / Defuse</div><div><kbd>G</kbd> Drop bomb</div>
+          <div><kbd>Tab</kbd> Scoreboard</div><div><kbd>Y</kbd> / <kbd>U</kbd> Chat / Team chat</div>
+          <div><kbd>M</kbd> Change team</div><div><kbd>Esc</kbd> Menu</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ HUD ═══════════════ -->
+  <div id="hud" hidden>
+    <div id="vignette"></div>
+    <div id="countdown"></div>
+    <div id="roundIntro" hidden><div class="ri-round"></div><div class="ri-score"><span class="t"></span><em>—</em><span class="ct"></span></div><div class="ri-side"></div></div>
+    <div id="killConfirm"></div>
+    <div id="dmgNumbers"></div>
+    <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
+    <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="scope" hidden><div class="scope-ring"></div><div class="scope-h"></div><div class="scope-v"></div></div>
+
+    <div id="topbar">
+      <div class="alive-row t" id="aliveT"></div>
+      <div class="score-box t"><small id="scoreTLabel">BULLS</small><b id="scoreT">0</b></div>
+      <div class="timer-box"><span id="timerText">0:00</span><div id="bombIcon" hidden>💣</div><small id="roundText">ROUND 1</small></div>
+      <div class="score-box ct"><b id="scoreCT">0</b><small id="scoreCTLabel">GUARD</small></div>
+      <div class="alive-row ct" id="aliveCT"></div>
+    </div>
+
+    <canvas id="radar" width="440" height="440"></canvas>
+    <div id="money"><span class="cur">$</span><b id="moneyText">800</b><div id="moneyDelta"></div></div>
+    <div id="buyHint" hidden><kbd>B</kbd> Buy menu</div>
+    <div id="spawnShield" hidden>SPAWN SHIELD</div>
+
+    <div id="killfeed"></div>
+
+    <div id="vitals">
+      <div class="vital hp"><svg viewBox="0 0 24 24"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z"/></svg><b id="hpText">100</b><div class="vbar"><i id="hpBar"></i></div></div>
+      <div class="vital armor"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 9.5-8 11-4.5-1.5-8-6-8-11V5z"/></svg><b id="armorText">0</b><span id="helmetIcon" hidden>⛑</span><div class="vbar"><i id="armorBar"></i></div></div>
+    </div>
+
+    <div id="ammo"><div id="weaponName">Udder-Nine</div><div class="ammo-row"><b id="magText">18</b><span>/</span><em id="reserveText">90</em></div></div>
+    <div id="inventory"></div>
+
+    <div id="centerMsg"></div>
+    <div id="roundBanner" hidden><div class="rb-inner"><div class="rb-title"></div><div class="rb-sub"></div><div class="rb-mvp"></div></div></div>
+    <div id="progress" hidden><div class="pg-label"></div><div class="pg-bar"><i></i></div></div>
+    <div id="dmgIndicators"></div>
+    <div id="flashOverlay"></div>
+    <div id="smokeOverlay"></div>
+    <div id="hurtOverlay"></div>
+    <div id="fireOverlay"></div>
+    <div id="spectate" hidden></div>
+    <div id="deathInfo" hidden></div>
+    <div id="netgraph"></div>
+
+    <div id="chat"><div id="chatLog"></div><div class="chat-input-row" hidden><span id="chatMode">ALL</span><input id="chatInput" maxlength="140" autocomplete="off" /></div></div>
+  </div>
+
+  <div id="buymenu" class="overlay" hidden>
+    <div class="bm-panel">
+      <div class="bm-head"><h3>BUY MENU</h3><div class="bm-money">$<b id="bmMoney">0</b></div><div id="bmTime" class="bm-time"></div></div>
+      <div id="bmGrid" class="bm-grid"></div>
+      <div class="bm-foot">Click an item to buy · <kbd>B</kbd> / <kbd>Esc</kbd> to close</div>
+    </div>
+  </div>
+
+  <div id="scoreboard" class="overlay" hidden>
+    <div class="sb-panel">
+      <div class="sb-head"><span id="sbMap">de_barnyard</span><span id="sbRound"></span></div>
+      <div class="sb-team ct"><div class="sb-title"><b id="sbScoreCT">0</b> <span id="sbTitleCT">DAIRY GUARD</span></div><table><thead><tr><th></th><th>Player</th><th>$</th><th>K</th><th>A</th><th>D</th><th>★</th><th>Score</th><th>Ping</th></tr></thead><tbody id="sbCT"></tbody></table></div>
+      <div class="sb-team t"><div class="sb-title"><b id="sbScoreT">0</b> ROGUE BULLS</div><table><thead><tr><th></th><th>Player</th><th>$</th><th>K</th><th>A</th><th>D</th><th>★</th><th>Score</th><th>Ping</th></tr></thead><tbody id="sbT"></tbody></table></div>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay" hidden>
+    <div class="pause-panel">
+      <h3>PAUSED</h3>
+      <div class="invite" id="inviteBox">
+        <div class="invite-head"><span id="inviteLabel">Room code</span><span class="invite-code" id="inviteCode">—</span></div>
+        <div class="invite-link" id="inviteLink"></div>
+        <button class="ghost-btn" id="copyInvite">Copy invite link</button>
+      </div>
+      <button class="primary-btn" id="resumeBtn">Resume</button>
+      <button class="ghost-btn" id="teamBtn">Change team</button>
+      <div id="pauseSettings" class="settings compact"></div>
+      <button class="ghost-btn danger" id="leaveBtn">Leave match</button>
+    </div>
+  </div>
+
+  <div id="teamSelect" class="overlay" hidden>
+    <div class="ts-panel">
+      <h3>CHOOSE YOUR HERD</h3>
+      <div class="team-pick">
+        <button class="team-card t" data-switch="T"><div class="tc-emblem">🐂</div><div class="tc-name">Rogue Bulls</div><div class="tc-role">Attackers</div></button>
+        <button class="team-card ct" data-switch="CT"><div class="tc-emblem">🐄</div><div class="tc-name">Dairy Guard</div><div class="tc-role">Defenders</div></button>
+      </div>
+      <button class="ghost-btn" id="tsClose">Cancel</button>
+    </div>
+  </div>
+
+  <div id="matchEnd" class="overlay" hidden>
+    <div class="me-panel"><div class="me-title"></div><div class="me-score"></div><div class="me-sub">Next match starting soon…</div></div>
+  </div>
+
+  <div id="clickToPlay" class="overlay" hidden><div class="ctp">Click to play</div></div>
+  <div id="loading" class="screen" hidden><div class="spinner"></div><div>Connecting to the herd…</div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

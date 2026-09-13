@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: cs-moo
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/rooms
+    envVars:
+      - key: NODE_VERSION
+        value: 22
