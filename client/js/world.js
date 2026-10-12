@@ -1,10 +1,10 @@
 // Builds de_barnyard visuals: merged textured geometry, baked sun shadows, sky, skyline props.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 import { MAP } from '/shared/map.js';
 import { boxBlocked } from '/shared/physics.js';
-import { makeTextures, textTexture } from './textures.js';
+import { makeTextures, textTexture, normalMapFor } from './textures.js';
 
 const MAT_SCALE = { stone: 4, barn: 3.5, concrete: 5, brick: 3, door: 4.5, crate: 0, hay: 0, metal: 2.5, tank: 3.2, wood: 3 };
 
@@ -42,35 +42,40 @@ function boxGeometry(b, scale) {
   return g;
 }
 
-function skyDome() {
-  const geo = new THREE.SphereGeometry(900, 32, 16);
-  const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    fog: false,
-    uniforms: {
-      top: { value: new THREE.Color(0x3f78c9) },
-      horizon: { value: new THREE.Color(0xf4dcb0) },
-      bottom: { value: new THREE.Color(0x8a7b62) },
-      sunDir: { value: new THREE.Vector3(0.45, 0.62, 0.3).normalize() },
-    },
-    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `
-      uniform vec3 top; uniform vec3 horizon; uniform vec3 bottom; uniform vec3 sunDir; varying vec3 vDir;
-      void main(){
-        float h = vDir.y;
-        vec3 col = h > 0.0 ? mix(horizon, top, pow(smoothstep(0.0, 0.7, h), 0.7)) : mix(horizon, bottom, smoothstep(0.0, -0.2, h));
-        float s = max(dot(vDir, sunDir), 0.0);
-        col += vec3(1.0, 0.85, 0.55) * (pow(s, 600.0) * 3.0 + pow(s, 12.0) * 0.25);
-        gl_FragColor = vec4(col, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }`,
-  });
-  const m = new THREE.Mesh(geo, mat);
-  m.frustumCulled = false;
-  m.renderOrder = -10;
-  return m;
+// Rayleigh/Mie atmospheric sky with volumetric clouds. Also drives the sun direction and
+// the image-based lighting, so sky, sunlight and ambient all agree instead of being hand-picked.
+export const SUN = { elevation: 34, azimuth: 148 };
+const SKY_SCALE = 0.12;
+
+function sunVector(elevation = SUN.elevation, azimuth = SUN.azimuth) {
+  return new THREE.Vector3().setFromSphericalCoords(
+    1, THREE.MathUtils.degToRad(90 - elevation), THREE.MathUtils.degToRad(azimuth));
+}
+
+function makeSky(sunDir) {
+  const sky = new Sky();
+  sky.scale.setScalar(12000);
+  sky.frustumCulled = false;
+  sky.renderOrder = -10;
+  const u = sky.material.uniforms;
+  u.turbidity.value = 4.5;
+  u.rayleigh.value = 1.15;
+  u.mieCoefficient.value = 0.004;
+  u.mieDirectionalG.value = 0.86;
+  u.cloudCoverage.value = 0.45;
+  u.cloudDensity.value = 0.5;
+  u.cloudScale.value = 0.00022;
+  u.cloudSpeed.value = 0.00003;
+  u.cloudElevation.value = 0.42;
+  u.sunPosition.value.copy(sunDir);
+
+  // The atmospheric model returns raw radiance (tens of units). Left alone it swamps the
+  // bloom threshold and veils the whole frame in white, so scale it into a sane HDR range.
+  u.skyScale = { value: SKY_SCALE };
+  sky.material.fragmentShader = 'uniform float skyScale;\n' + sky.material.fragmentShader.replace(
+    'gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( texColor * skyScale, 1.0 );');
+  sky.material.needsUpdate = true;
+  return sky;
 }
 
 function gableRoof(b, mat, endMat) {
@@ -173,7 +178,7 @@ function addBirdFlock(scene, updaters) {
 }
 
 function addUtilityPoles(scene) {
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x423d35, roughness: 0.95 });
+  const poleMat = stdMat({ color: 0x423d35, roughness: 0.95 });
   const wireMat = new THREE.LineBasicMaterial({ color: 0x302d29, transparent: true, opacity: 0.7 });
   const positions = [[-96, -76], [-42, -96], [20, -98], [78, -90]];
   for (let i = 0; i < positions.length; i++) {
@@ -194,11 +199,11 @@ function addUtilityPoles(scene) {
 }
 
 function addCreameryBeacons(scene, updaters) {
-  const baseMat = new THREE.MeshStandardMaterial({ color: 0x2f363a, roughness: 0.45, metalness: 0.7 });
+  const baseMat = stdMat({ color: 0x2f363a, roughness: 0.45, metalness: 0.7 });
   const lights = [];
   for (const [x, z] of [[-31, -31], [31, -31], [-31, 31], [31, 31]]) {
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.16, 10), baseMat);
-    const bulbMat = new THREE.MeshStandardMaterial({ color: 0xff5c45, emissive: 0xff1608, emissiveIntensity: 1.4 });
+    const bulbMat = stdMat({ color: 0xff5c45, emissive: 0xff1608, emissiveIntensity: 1.4 });
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), bulbMat);
     base.position.set(x, 5.08, z); bulb.position.set(x, 5.23, z);
     scene.add(base, bulb); lights.push(bulbMat);
@@ -207,25 +212,40 @@ function addCreameryBeacons(scene, updaters) {
   updaters.push((dt) => { time += dt; const pulse = 0.55 + 1.65 * Math.max(0, Math.sin(time * 2.2)); lights.forEach((mat, i) => { mat.emissiveIntensity = i % 2 ? pulse : Math.max(0.35, pulse - 0.75); }); });
 }
 
+// MeshStandardMaterial + the procedural normal map that belongs to its colour map.
+function stdMat(opts) {
+  const n = normalMapFor(opts.map);
+  return new THREE.MeshStandardMaterial(n ? { normalMap: n, normalScale: new THREE.Vector2(1, 1), ...opts } : opts);
+}
+
 export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   const scene = new THREE.Group();
   targetScene.add(scene);
   const tex = makeTextures();
   const updaters = [];
 
-  targetScene.background = new THREE.Color(0xcfd9e0);
-  targetScene.fog = new THREE.Fog(0xe8d9bb, 90, 420);
-  scene.add(skyDome());
+  const sunDir = sunVector();
+  const sky = makeSky(sunDir);
+  scene.add(sky);
+  targetScene.fog = new THREE.Fog(0xa8bccd, 160, 720);
+  updaters.push((dt) => { sky.material.uniforms.time.value += dt * 1000; });
 
+  // Image-based lighting generated from that same sky, so ambient colour matches the horizon.
   const pmrem = new THREE.PMREMGenerator(renderer);
-  targetScene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  targetScene.environmentIntensity = 0.35;
+  const envSky = makeSky(sunDir);
+  envSky.scale.setScalar(450);
+  const envScene = new THREE.Scene();
+  envScene.add(envSky);
+  targetScene.environment = pmrem.fromScene(envScene, 0, 1, 2000).texture;
+  targetScene.environmentIntensity = 1.1;
+  envSky.geometry.dispose();
+  envSky.material.dispose();
 
-  // Lights
-  const hemi = new THREE.HemisphereLight(0xcfe3ff, 0x6b5a40, 1.15);
+  // Lights — warm key, cool sky fill. The environment map carries most of the ambient now.
+  const hemi = new THREE.HemisphereLight(0x7fb5ff, 0x4a3f2e, 0.9);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff0d0, 2.6);
-  sun.position.set(55, 80, 38);
+  const sun = new THREE.DirectionalLight(0xffdfae, 5.2);
+  sun.position.copy(sunDir).multiplyScalar(220);
   sun.target.position.set(0, 0, 0);
   scene.add(sun, sun.target);
   if (shadows) {
@@ -242,7 +262,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
 
   // Materials
   const mats = {};
-  const std = (map, opts = {}) => new THREE.MeshStandardMaterial({ map, roughness: 0.92, metalness: 0, vertexColors: true, ...opts });
+  const std = (map, opts = {}) => stdMat({ map, roughness: 0.92, metalness: 0, vertexColors: true, ...opts });
   mats.stone = std(tex.stone);
   mats.barn = std(tex.barn);
   mats.concrete = std(tex.concrete);
@@ -273,7 +293,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   // Ground
   const groundTex = tex.ground;
   groundTex.repeat.set(40, 40);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), stdMat({ map: groundTex, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
@@ -282,12 +302,13 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   const paveTex = tex.concrete.clone();
   paveTex.needsUpdate = true;
   paveTex.repeat.set(1, 1);
-  const paveMat = new THREE.MeshStandardMaterial({ map: paveTex, roughness: 0.95, color: 0xd8d2c4 });
+  const paveMat = stdMat({ map: paveTex, roughness: 0.95, color: 0xd8d2c4 });
   for (const r of MAP.paved || []) {
     const w = r.maxX - r.minX + 6, d = r.maxZ - r.minZ + 6;
     const t = paveTex.clone(); t.repeat.set(w / 6, d / 6); t.needsUpdate = true;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), paveMat.clone());
     m.material.map = t;
+    m.material.normalMap = normalMapFor(t);
     m.rotation.x = -Math.PI / 2;
     m.position.set((r.minX + r.maxX) / 2, 0.012, (r.minZ + r.maxZ) / 2);
     m.receiveShadow = true;
@@ -296,7 +317,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
     // painted letter
     const letter = new THREE.Mesh(
       new THREE.PlaneGeometry(9, 9),
-      new THREE.MeshStandardMaterial({ map: textTexture(r.name, { color: 'rgba(214,64,40,0.85)', font: 'bold 230px Bebas Neue, Impact, sans-serif' }), transparent: true, depthWrite: false, roughness: 1 }),
+      stdMat({ map: textTexture(r.name, { color: 'rgba(214,64,40,0.85)', font: 'bold 230px Bebas Neue, Impact, sans-serif' }), transparent: true, depthWrite: false, roughness: 1 }),
     );
     letter.rotation.x = -Math.PI / 2;
     letter.position.set(r.center[0], 0.03, r.center[1]);
@@ -313,16 +334,16 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   }
 
   // Roofs
-  const roofMat = new THREE.MeshStandardMaterial({ map: tex.roof, roughness: 0.85 });
-  const roofEnd = new THREE.MeshStandardMaterial({ map: tex.barn, roughness: 0.9, side: THREE.DoubleSide });
+  const roofMat = stdMat({ map: tex.roof, roughness: 0.85 });
+  const roofEnd = stdMat({ map: tex.barn, roughness: 0.9, side: THREE.DoubleSide });
   for (const b of MAP.boxes) {
     if (b.mat === 'barn') scene.add(gableRoof(b, roofMat, roofEnd));
-    if (b.mat === 'wood' && b.max[1] > 2.5) scene.add(gableRoof(b, roofMat, new THREE.MeshStandardMaterial({ map: tex.wood, side: THREE.DoubleSide })));
+    if (b.mat === 'wood' && b.max[1] > 2.5) scene.add(gableRoof(b, roofMat, stdMat({ map: tex.wood, side: THREE.DoubleSide })));
   }
 
   // Windows on building walls
-  const glass = new THREE.MeshStandardMaterial({ color: 0x1b2530, roughness: 0.1, metalness: 0.8 });
-  const frame = new THREE.MeshStandardMaterial({ color: 0xf1eadb, roughness: 0.8 });
+  const glass = stdMat({ color: 0x1b2530, roughness: 0.1, metalness: 0.8 });
+  const frame = stdMat({ color: 0xf1eadb, roughness: 0.8 });
   const winGeo = new THREE.BoxGeometry(1.6, 1.8, 0.08);
   const frameGeo = new THREE.BoxGeometry(1.9, 2.1, 0.06);
   const crossV = new THREE.BoxGeometry(0.1, 1.8, 0.1);
@@ -360,8 +381,8 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   }
 
   // Silos & rooftop details
-  const siloMat = new THREE.MeshStandardMaterial({ map: tex.metal, roughness: 0.5, metalness: 0.4, color: 0xdfe8e6 });
-  const domeMat = new THREE.MeshStandardMaterial({ color: 0xb8c4c8, roughness: 0.35, metalness: 0.7 });
+  const siloMat = stdMat({ map: tex.metal, roughness: 0.5, metalness: 0.4, color: 0xdfe8e6 });
+  const domeMat = stdMat({ color: 0xb8c4c8, roughness: 0.35, metalness: 0.7 });
   for (const [x, z, r, h, base = 7] of MAP.silos || []) {
     const silo = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 24), siloMat);
     silo.position.set(x, base + h / 2, z);
@@ -379,7 +400,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   if (MAP.name === 'dm_creamery') addCreameryBeacons(scene, updaters);
 
   // parapets on concrete blocks
-  const parMat = new THREE.MeshStandardMaterial({ map: tex.concrete, roughness: 0.9, color: 0xc9c4b8 });
+  const parMat = stdMat({ map: tex.concrete, roughness: 0.9, color: 0xc9c4b8 });
   for (const b of MAP.boxes) {
     if (b.mat !== 'concrete') continue;
     const w = b.max[0] - b.min[0], d = b.max[2] - b.min[2];
@@ -390,7 +411,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   }
 
   // Perimeter fence rail on stone walls
-  const railMat = new THREE.MeshStandardMaterial({ map: tex.wood, roughness: 0.9 });
+  const railMat = stdMat({ map: tex.wood, roughness: 0.9 });
   const postGeo = new THREE.BoxGeometry(0.25, 1.4, 0.25);
   const posts = new THREE.InstancedMesh(postGeo, railMat, 220);
   let pi = 0;
@@ -416,9 +437,9 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   }
 
   // Skyline: trees, hills, windmill
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3525, roughness: 1 });
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 1, flatShading: true });
-  const leafMat2 = new THREE.MeshStandardMaterial({ color: 0x3f6a34, roughness: 1, flatShading: true });
+  const trunkMat = stdMat({ color: 0x4a3525, roughness: 1 });
+  const leafMat = stdMat({ color: 0x4f7a3a, roughness: 1, flatShading: true });
+  const leafMat2 = stdMat({ color: 0x3f6a34, roughness: 1, flatShading: true });
   for (let i = 0; i < 70; i++) {
     const a = rnd() * Math.PI * 2;
     const d = 75 + rnd() * 60;
@@ -427,7 +448,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
     t.scale.setScalar(1 + rnd() * 0.6);
     scene.add(t);
   }
-  const hillMat = new THREE.MeshStandardMaterial({ color: 0x7f9a5a, roughness: 1, flatShading: true });
+  const hillMat = stdMat({ color: 0x7f9a5a, roughness: 1, flatShading: true });
   for (let i = 0; i < 16; i++) {
     const a = (i / 16) * Math.PI * 2 + rnd() * 0.2;
     const d = 300 + rnd() * 120;
@@ -438,14 +459,14 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   }
   {
     const wm = new THREE.Group();
-    const towerMat = new THREE.MeshStandardMaterial({ color: 0xe9e2d0, roughness: 0.8 });
+    const towerMat = stdMat({ color: 0xe9e2d0, roughness: 0.8 });
     const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 4.2, 26, 8), towerMat);
     tower.position.y = 13;
     const cap = new THREE.Mesh(new THREE.ConeGeometry(3.2, 5, 8), roofMat);
     cap.position.y = 28.5;
     const hub = new THREE.Group();
     hub.position.set(0, 25, 3.2);
-    const bladeMat = new THREE.MeshStandardMaterial({ map: tex.wood, roughness: 0.9 });
+    const bladeMat = stdMat({ map: tex.wood, roughness: 0.9 });
     for (let i = 0; i < 4; i++) {
       const blade = new THREE.Mesh(new THREE.BoxGeometry(2.2, 13, 0.15), bladeMat);
       blade.position.y = 7;
@@ -464,13 +485,13 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   // Water tower near CT
   {
     const wt = new THREE.Group();
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x5b4a3a, roughness: 0.9 });
+    const legMat = stdMat({ color: 0x5b4a3a, roughness: 0.9 });
     for (const [x, z] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) {
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 18, 6), legMat);
       leg.position.set(x, 9, z);
       wt.add(leg);
     }
-    const tank = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 7, 20), new THREE.MeshStandardMaterial({ map: tex.tank, roughness: 0.4, metalness: 0.5 }));
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 7, 20), stdMat({ map: tex.tank, roughness: 0.4, metalness: 0.5 }));
     tank.position.y = 21.5;
     const top = new THREE.Mesh(new THREE.ConeGeometry(5.4, 3, 20), roofMat);
     top.position.y = 26.5;
@@ -499,7 +520,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   addBirdFlock(scene, updaters);
 
   // Decorative small props hugging walls (visual only)
-  const canMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.3, metalness: 0.8 });
+  const canMat = stdMat({ color: 0xcfd6dc, roughness: 0.3, metalness: 0.8 });
   const canGeo = new THREE.CylinderGeometry(0.22, 0.26, 0.7, 12);
   const canSpots = [[-45.6, 0, 12], [-45.6, 0, 13], [45.6, 0, 22], [45.6, 0, 21.4], [-7.6, 0, 40], [7.6, 0, 16], [-21.6, 0, -40], [21.6, 0, -35]];
   for (const [x, , z] of MAP.name === 'de_barnyard' ? canSpots : []) {
@@ -509,7 +530,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
     scene.add(c);
   }
   // Signage
-  const signMat = (txt, color) => new THREE.MeshStandardMaterial({ map: textTexture(txt, { color, font: 'bold 120px Bebas Neue, Impact, sans-serif' }), transparent: true, roughness: 1 });
+  const signMat = (txt, color) => stdMat({ map: textTexture(txt, { color, font: 'bold 120px Bebas Neue, Impact, sans-serif' }), transparent: true, roughness: 1 });
   const signs = [
     ['A', [-23.9, 3.2, -35], -Math.PI / 2, 'rgba(230,230,230,0.9)'],
     ['B', [21.9, 3.2, -30], Math.PI / 2, 'rgba(230,230,230,0.9)'],
@@ -526,9 +547,9 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
 
   // Branded delivery clutter gives both arenas an everyday purpose without affecting routes.
   {
-    const propWood = new THREE.MeshStandardMaterial({ map: tex.wood, roughness: 0.9 });
-    const propMetal = new THREE.MeshStandardMaterial({ color: 0xd9e0df, roughness: 0.28, metalness: 0.8 });
-    const propLid = new THREE.MeshStandardMaterial({ color: 0x42515a, roughness: 0.35, metalness: 0.75 });
+    const propWood = stdMat({ map: tex.wood, roughness: 0.9 });
+    const propMetal = stdMat({ color: 0xd9e0df, roughness: 0.28, metalness: 0.8 });
+    const propLid = stdMat({ color: 0x42515a, roughness: 0.35, metalness: 0.75 });
     const addPalletStack = (x, z, turn = 0, levels = 1) => {
       for (let i = 0; i < levels; i++) {
         const pallet = makePallet(propWood);
@@ -543,9 +564,9 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
       }
     };
     if (MAP.name === 'dm_creamery') {
-      const brand = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.4), new THREE.MeshStandardMaterial({ map: textTexture('MOO  CREAMERY', { color: 'rgba(239,246,238,0.95)', font: 'bold 72px Bebas Neue, Impact, sans-serif' }), transparent: true, roughness: 0.75 }));
+      const brand = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.4), stdMat({ map: textTexture('MOO  CREAMERY', { color: 'rgba(239,246,238,0.95)', font: 'bold 72px Bebas Neue, Impact, sans-serif' }), transparent: true, roughness: 0.75 }));
       brand.position.set(0, 5.15, -34.82); brand.rotation.y = Math.PI; scene.add(brand);
-      const delivery = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 1.2), new THREE.MeshStandardMaterial({ map: textTexture('MILK  DELIVERY  →', { color: 'rgba(242,193,78,0.92)', font: 'bold 48px Bebas Neue, Impact, sans-serif' }), transparent: true, roughness: 0.8 }));
+      const delivery = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 1.2), stdMat({ map: textTexture('MILK  DELIVERY  →', { color: 'rgba(242,193,78,0.92)', font: 'bold 48px Bebas Neue, Impact, sans-serif' }), transparent: true, roughness: 0.8 }));
       delivery.position.set(-34.82, 3.05, -9); delivery.rotation.y = Math.PI / 2; scene.add(delivery);
       addPalletStack(-33.8, 17.5, Math.PI / 2, 2); addPalletStack(33.8, -17.5, -Math.PI / 2, 1);
       addCans(-33.9, 15.9, 3); addCans(33.85, -15.8, 2);
@@ -572,15 +593,15 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
         capGeos.push(g);
       }
     }
-    const trim = new THREE.Mesh(mergeGeometries(trimGeos), new THREE.MeshStandardMaterial({ color: 0x57524a, roughness: 0.95 }));
+    const trim = new THREE.Mesh(mergeGeometries(trimGeos), stdMat({ color: 0x57524a, roughness: 0.95 }));
     trim.receiveShadow = true;
-    const cap = new THREE.Mesh(mergeGeometries(capGeos), new THREE.MeshStandardMaterial({ color: 0x9b968b, roughness: 0.9 }));
+    const cap = new THREE.Mesh(mergeGeometries(capGeos), stdMat({ color: 0x9b968b, roughness: 0.9 }));
     cap.castShadow = true;
     scene.add(trim, cap);
 
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2d3035, roughness: 0.45, metalness: 0.7 });
-    const shadeMat = new THREE.MeshStandardMaterial({ color: 0x2f5a3e, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide });
-    const bulbMat = new THREE.MeshStandardMaterial({ color: 0xfff3d6, emissive: 0xffd89a, emissiveIntensity: 2.5 });
+    const poleMat = stdMat({ color: 0x2d3035, roughness: 0.45, metalness: 0.7 });
+    const shadeMat = stdMat({ color: 0x2f5a3e, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide });
+    const bulbMat = stdMat({ color: 0xfff3d6, emissive: 0xffd89a, emissiveIntensity: 2.5 });
     const lamps = MAP.decor?.lamps || [];
     for (const [x, z, nx, nz] of lamps) {
       const g = new THREE.Group();
@@ -602,7 +623,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
 
     const barrelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.95, 18);
     const ringGeo = new THREE.TorusGeometry(0.305, 0.02, 6, 20);
-    const barrelMats = [0x2f6fd0, 0xb3261e, 0x6b4a2e].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.45 }));
+    const barrelMats = [0x2f6fd0, 0xb3261e, 0x6b4a2e].map((c) => stdMat({ color: c, roughness: 0.55, metalness: 0.45 }));
     const barrels = MAP.decor?.barrels || [];
     barrels.forEach(([x, z], i) => {
       const mat = barrelMats[i % barrelMats.length];
@@ -639,7 +660,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
       return p;
     });
     const tuft = mergeGeometries(tuftGeos);
-    const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 1 });
+    const grassMat = stdMat({ map: grassTex, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 1 });
     const COUNT = 1100;
     const grass = new THREE.InstancedMesh(tuft, grassMat, COUNT);
     const tall = MAP.boxes.filter((b) => b.max[1] >= 2);
@@ -671,6 +692,8 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
     tex,
     collidables,
     sun,
+    sky,
+    hemi,
     update(dt) { for (const u of updaters) u(dt); },
     refreshShadows() { if (shadows) renderer.shadowMap.needsUpdate = true; },
     dispose() {

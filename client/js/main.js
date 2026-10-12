@@ -24,6 +24,7 @@ const DEFAULTS = {
   motionIntensity: 0.75,
   renderScale: Math.min(window.devicePixelRatio || 1, 1.5),
   shadows: true,
+  quality: 'high',
 };
 
 function loadSettings() {
@@ -61,6 +62,7 @@ const FIELDS = [
   { key: 'motionIntensity', label: 'Motion intensity', type: 'range', min: 0, max: 1, step: 0.05 },
   { key: 'renderScale', label: 'Render scale', type: 'range', min: 0.5, max: 2, step: 0.25 },
   { key: 'shadows', label: 'Shadows (reload)', type: 'checkbox' },
+  { key: 'quality', label: 'Graphics quality', type: 'select', options: ['low', 'medium', 'high', 'ultra'] },
 ];
 
 function buildSettings(container, compact = false) {
@@ -70,14 +72,22 @@ function buildSettings(container, compact = false) {
     const row = document.createElement('div');
     row.className = 'setting';
     const id = `${container.id}-${f.key}`;
-    const input = document.createElement('input');
-    input.type = f.type;
+    const input = document.createElement(f.type === 'select' ? 'select' : 'input');
+    if (f.type !== 'select') input.type = f.type;
     input.id = id;
     const out = document.createElement('output');
     if (f.type === 'range') {
       Object.assign(input, { min: f.min, max: f.max, step: f.step, value: settings[f.key] });
       out.textContent = settings[f.key];
     } else if (f.type === 'color') {
+      input.value = settings[f.key];
+    } else if (f.type === 'select') {
+      for (const o of f.options) {
+        const op = document.createElement('option');
+        op.value = o;
+        op.textContent = o[0].toUpperCase() + o.slice(1);
+        input.appendChild(op);
+      }
       input.value = settings[f.key];
     } else {
       input.checked = !!settings[f.key];

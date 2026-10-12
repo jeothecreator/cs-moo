@@ -10,6 +10,7 @@ import { buildWorld, IMPACT_COLORS } from './world.js';
 import { CowModel } from './cow.js';
 import { ViewModel, buildWeaponMesh } from './viewmodel.js';
 import { Effects } from './effects.js';
+import { PostFX } from './postfx.js';
 import { Net } from './net.js';
 import { labelTexture } from './textures.js';
 import { weaponLabel } from './hud.js';
@@ -37,7 +38,7 @@ export class Game {
     const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }));
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.05;
+    r.toneMappingExposure = 1.15;
     r.autoClear = false;
 
     this.scene = new THREE.Scene();
@@ -51,8 +52,16 @@ export class Game {
     this.initBlockAssets();
     this.vm = new ViewModel();
     this.vm.scene.environment = this.scene.environment;
-    this.vm.scene.environmentIntensity = 0.8;
+    this.vm.scene.environmentIntensity = 1.0;
     this.effects = new Effects(this.scene);
+
+    // Post-processing. Falls back to plain forward rendering if the GPU/driver rejects the chain.
+    try {
+      this.fx = new PostFX(r, this.scene, this.camera, settings.quality);
+    } catch (e) {
+      console.warn('Post-processing unavailable, using direct render', e);
+      this.fx = null;
+    }
 
     this.bombMesh = buildWeaponMesh('bomb');
     this.bombMesh.scale.setScalar(2.2);
@@ -164,11 +173,13 @@ export class Game {
     this.camera.updateProjectionMatrix();
     this.vm.setAspect(w / h);
     this.effects.setViewport(h * pr, this.camera.fov);
+    this.fx?.resize();
   }
 
   applySettings() {
     this.audio.setVolume(this.settings.volume);
     this.hud.applyCrosshair(this.settings);
+    this.fx?.setQuality(this.settings.quality);
     this.resize();
   }
 
@@ -1202,8 +1213,7 @@ export class Game {
     if (this.mode === 'obby' || this.mode === 'editor') {
       if (this.mode === 'obby') this.obby.update(dt);
       else this.editor.update(dt);
-      this.renderer.clear();
-      this.renderer.render(this.obby.scene, this.camera);
+      this.renderScene(this.obby.scene, null, dt);
       return;
     }
 
@@ -1213,8 +1223,7 @@ export class Game {
       this.camera.updateProjectionMatrix();
       this.camera.position.set(Math.sin(this.menuAngle) * 58, 26, Math.cos(this.menuAngle) * 58);
       this.camera.lookAt(0, 2, -6);
-      this.renderer.clear();
-      this.renderer.render(this.scene, this.camera);
+      this.renderScene(this.scene, null, dt);
       return;
     }
 
@@ -1224,11 +1233,17 @@ export class Game {
     this.updateCamera(dt);
     this.updateHud(dt);
 
-    this.renderer.clear();
-    this.renderer.render(this.scene, this.camera);
     const sniperView = this.me.alive && WEAPONS[this.me.act]?.scope && this.scoped > 0 && this.vm.adsT > 0.9;
     const hideVm = (!this.me.alive && !this.spectateId) || sniperView;
-    if (!hideVm) this.vm.render(this.renderer);
+    this.renderScene(this.scene, hideVm ? null : this.vm, dt);
+  }
+
+  // Every scene goes through here so post-processing applies uniformly.
+  renderScene(scene, vm, dt) {
+    if (this.fx) { this.fx.render(scene, this.camera, vm, dt); return; }
+    this.renderer.clear();
+    this.renderer.render(scene, this.camera);
+    if (vm) vm.render(this.renderer);
   }
 
   updateLocal(dt) {

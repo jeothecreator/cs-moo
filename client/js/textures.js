@@ -31,9 +31,67 @@ function toTexture(c, repeat = true) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
+  t.anisotropy = 16; // clamped to the GPU max by three; keeps ground sharp at grazing angles
   return t;
 }
+
+// Sobel the luminance of a painted canvas into a tangent-space normal map, so every
+// procedural surface catches the sun with real relief instead of reading as a flat decal.
+// Looked up via normalMapFor(); see the WeakMap below.
+function normalFromCanvas(src, strength = 2) {
+  const s = src.width;
+  const px = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, s, s).data;
+  const h = new Float32Array(s * s);
+  for (let i = 0; i < s * s; i++) h[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+
+  const [nc, nctx] = canvas(s);
+  const out = nctx.createImageData(s, s);
+  const o = out.data;
+  const wrap = (v) => (v + s) % s;
+  for (let y = 0; y < s; y++) {
+    const yUp = wrap(y - 1) * s, yMid = y * s, yDn = wrap(y + 1) * s;
+    for (let x = 0; x < s; x++) {
+      const xL = wrap(x - 1), xR = wrap(x + 1);
+      const dx = (h[yUp + xR] + 2 * h[yMid + xR] + h[yDn + xR]) - (h[yUp + xL] + 2 * h[yMid + xL] + h[yDn + xL]);
+      const dy = (h[yDn + xL] + 2 * h[yDn + x] + h[yDn + xR]) - (h[yUp + xL] + 2 * h[yUp + x] + h[yUp + xR]);
+      const nx = -dx * strength, ny = -dy * strength;
+      const inv = 1 / Math.hypot(nx, ny, 1);
+      const i = (yMid + x) * 4;
+      o[i] = (nx * inv * 0.5 + 0.5) * 255;
+      o[i + 1] = (ny * inv * 0.5 + 0.5) * 255;
+      o[i + 2] = (inv * 0.5 + 0.5) * 255;
+      o[i + 3] = 255;
+    }
+  }
+  nctx.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(nc);
+  t.colorSpace = THREE.NoColorSpace; // vector data, never colour-managed
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 16;
+  return t;
+}
+
+// colour canvas → normal map. Keyed on the canvas (not the texture) because Texture.clone()
+// shares .image but JSON-copies userData, which would mangle a texture stored there.
+const normalMaps = new WeakMap();
+
+/** The normal map for a colour texture, re-tiled to match if the texture repeats. */
+export function normalMapFor(tex) {
+  const base = tex?.image ? normalMaps.get(tex.image) : null;
+  if (!base) return null;
+  if (base.repeat.equals(tex.repeat) && base.offset.equals(tex.offset)) return base;
+  const n = base.clone(); // shares the GPU upload through Texture.source
+  n.repeat.copy(tex.repeat);
+  n.offset.copy(tex.offset);
+  n.needsUpdate = true;
+  return n;
+}
+
+// Relief depth per surface — rough masonry and straw get far more than sheet metal.
+const RELIEF = {
+  barn: 2.4, door: 2.0, wood: 2.0, crate: 2.2, hay: 3.0, concrete: 1.3, brick: 3.0,
+  stone: 1.6, metal: 0.8, tank: 0.6, ground: 1.2, roof: 2.6, holstein: 0.5, bull: 0.5,
+};
 
 const painters = {
   planks(ctx, s, base, vertical = true, count = 8) {
@@ -254,6 +312,9 @@ export function makeTextures() {
     tex.camoT = toTexture(c2);
   }
 
+  for (const [k, strength] of Object.entries(RELIEF)) {
+    if (tex[k]?.image) normalMaps.set(tex[k].image, normalFromCanvas(tex[k].image, strength));
+  }
   return tex;
 }
 
