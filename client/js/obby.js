@@ -1,17 +1,17 @@
-// Udder Chaos Obby — solo, client-side cow-themed obstacle courses.
-// Plays the official 8-stage course or a community course built in the Obby Creator.
+// Assault Course — solo, client-side obstacle courses over open water.
+// Plays the official 8-stage course or a community course built in the Course Creator.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { newBody, stepBody } from '/shared/physics.js';
 import { PLAYER } from '/shared/constants.js';
 import { BLOCK } from '/shared/obby.js';
 import { makeTextures } from './textures.js';
-import { CowModel } from './cow.js';
+import { SoldierModel } from './soldier.js';
 
 export const OBBY_BASE = 20;
 const BASE = OBBY_BASE;
 const KILL_Y = BASE - 9;
-const STAGES = ['Pasture Hop', 'Churn Spinners', 'Milk Tank Express', 'Cheese Collapse', 'Hay Bounce', 'Udder Tower', 'Barn Rafters', 'Hay Bale Stampede'];
+const STAGES = ['Turf Hop', 'Rotor Sweep', 'Tank Express', 'Rotten Planks', 'Sandbag Bounce', 'Watchtower', 'Rafters', 'Barrel Run'];
 const BEST_KEY = 'csmoo.obbyBest';
 const BEST_DIST_KEY = 'csmoo.obbyBestDist';
 
@@ -22,7 +22,7 @@ export function formatRunTime(s) {
 }
 
 export function playerName() {
-  return (document.getElementById('nameInput')?.value || '').trim().slice(0, 16) || 'Calf';
+  return (document.getElementById('nameInput')?.value || '').trim().slice(0, 16) || 'Recruit';
 }
 
 export async function postJSON(url, body) {
@@ -123,38 +123,43 @@ export class Obby {
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.random() * 3 - 1.5, y - 3 - Math.random() * 5); ctx.stroke();
       }
     });
-    const cheeseTex = canvasTex((ctx, s) => {
-      ctx.fillStyle = '#f5c542'; ctx.fillRect(0, 0, s, s);
-      for (let i = 0; i < 18; i++) {
-        const x = Math.random() * s, y = Math.random() * s, r = 6 + Math.random() * 16;
-        ctx.fillStyle = '#d9a324'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#c28e18'; ctx.beginPath(); ctx.arc(x + 2, y + 2, r * 0.7, 0, Math.PI * 2); ctx.fill();
+    const rotTex = canvasTex((ctx, s) => { // rotten planks that give way
+      for (let i = 0; i < 6; i++) {
+        ctx.fillStyle = `hsl(28,${20 + Math.random() * 10}%,${18 + Math.random() * 8}%)`;
+        ctx.fillRect(0, (i * s) / 6, s, s / 6);
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, (i * s) / 6, s, 3);
       }
+      for (let i = 0; i < 26; i++) {
+        ctx.strokeStyle = 'rgba(10,6,2,0.7)'; ctx.lineWidth = 2;
+        ctx.beginPath(); const x = Math.random() * s, y = Math.random() * s;
+        ctx.moveTo(x, y); ctx.lineTo(x + Math.random() * 40 - 20, y + Math.random() * 12 - 6); ctx.stroke();
+      }
+      for (let i = 0; i < 10; i++) { ctx.fillStyle = 'rgba(70,90,40,0.35)'; ctx.beginPath(); ctx.arc(Math.random() * s, Math.random() * s, 6 + Math.random() * 14, 0, Math.PI * 2); ctx.fill(); }
     });
     const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, ...o });
     const side = std({ map: tex.wood, color: 0x8a6a48 });
     this.mats = {
       turf: [side, side, std({ map: turfTex }), std({ map: tex.wood, color: 0x6e5238 }), side, side],
       crate: std({ map: tex.crate }),
-      hay: std({ map: tex.hay, roughness: 1 }),
+      sandbag: std({ map: tex.sandbag, roughness: 1 }),
       wood: std({ map: tex.wood }),
-      tank: std({ map: tex.tank, roughness: 0.3, metalness: 0.6 }),
-      cheese: std({ map: cheeseTex, roughness: 0.6 }),
-      sour: std({ color: 0x86e05a, emissive: 0x3c9a1e, emissiveIntensity: 0.9, roughness: 0.25 }),
-      butter: std({ color: 0xf7d96b, roughness: 0.45 }),
-      butterBlock: std({ color: 0xf7e7a0, roughness: 0.08, metalness: 0.05, emissive: 0x3a2e08, emissiveIntensity: 0.25 }),
-      pad: std({ color: 0xf29bb5, emissive: 0xb0406a, emissiveIntensity: 0.4, roughness: 0.4 }),
+      tank: std({ map: tex.steel, roughness: 0.3, metalness: 0.7 }),
+      rotten: std({ map: rotTex, roughness: 0.95 }),
+      toxic: std({ color: 0x86e05a, emissive: 0x3c9a1e, emissiveIntensity: 0.9, roughness: 0.25 }),
+      hazard: std({ color: 0xe8b521, roughness: 0.45 }),
+      ice: std({ color: 0xbfe3f2, roughness: 0.04, metalness: 0.05, emissive: 0x1a3a4a, emissiveIntensity: 0.35 }),
+      pad: std({ color: 0xff8a1e, emissive: 0xa04008, emissiveIntensity: 0.45, roughness: 0.4 }),
       padRim: std({ color: 0xffffff, roughness: 0.3 }),
       pole: std({ color: 0xe8e2d4, roughness: 0.5 }),
-      flag: std({ map: tex.holstein, side: THREE.DoubleSide }),
+      flag: std({ map: tex.camo, side: THREE.DoubleSide }),
       flagOn: std({ color: 0xf2c14e, emissive: 0xb57d12, emissiveIntensity: 0.6, side: THREE.DoubleSide }),
       gold: std({ color: 0xf2c14e, roughness: 0.2, metalness: 1, emissive: 0x6b4a08, emissiveIntensity: 0.4 }),
       start: std({ color: 0x5d9cec, emissive: 0x1d4c8c, emissiveIntensity: 0.6, roughness: 0.35 }),
-      milk: new THREE.MeshStandardMaterial({ color: 0xece8dc, roughness: 0.2, metalness: 0.05 }),
+      paint: new THREE.MeshStandardMaterial({ map: tex.concrete, color: 0xd9d6cf, roughness: 0.8 }),
     };
     this.unitBox = new THREE.BoxGeometry(1, 1, 1);
 
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), new THREE.MeshStandardMaterial({ color: 0xe4dccb, roughness: 0.35, metalness: 0.05 }));
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), new THREE.MeshStandardMaterial({ color: 0x1f3440, roughness: 0.12, metalness: 0.4 }));
     sea.rotation.x = -Math.PI / 2;
     sea.position.y = KILL_Y - 1.5;
     sea.receiveShadow = true;
@@ -177,8 +182,8 @@ export class Obby {
     }
     for (let i = 0; i < 16; i++) {
       const b = new THREE.Mesh(
-        new THREE.LatheGeometry([[0, 0], [0.9, 0], [0.95, 0.1], [0.95, 2.2], [0.5, 2.9], [0.45, 3.3], [0, 3.3]].map(([r, y]) => new THREE.Vector2(r, y)), 20),
-        this.mats.milk,
+        new THREE.CylinderGeometry(0.9, 0.9, 2.6, 20),
+        new THREE.MeshStandardMaterial({ map: tex.metal, color: i % 3 ? 0xb5402a : 0x2f5a9a, roughness: 0.55, metalness: 0.5 }),
       );
       const sgn = i % 2 ? -1 : 1;
       b.position.set(sgn * (9 + Math.random() * 10), KILL_Y + 1 + Math.random() * 6, 10 - i * 16);
@@ -187,9 +192,9 @@ export class Obby {
       this.decor.push({ obj: b, bob: Math.random() * 6, baseY: b.position.y });
     }
 
-    this.cow = new CowModel('T', tex);
-    this.cow.setWeapon('hoof');
-    scene.add(this.cow.root);
+    this.player = new SoldierModel('T');
+    this.player.setWeapon('knife');
+    scene.add(this.player.root);
   }
 
   // ─── Course loading ──────────────────────────────────────────
@@ -272,7 +277,7 @@ export class Obby {
     [[-36, 1.5], [-42, -2.0], [-48, 2.5]].forEach(([z, speed], i) => this.spinner((i % 2 ? -1 : 1) * 3.2, BASE + 1, z, 5.3, speed));
     this.checkpoint(0, BASE + 1, -58);
 
-    // 3 · Milk Tank Express
+    // 3 · Tank Express
     this.mover(3, 3, [-4, BASE + 1, -63.5], [4, BASE + 1, -63.5], 4.0, M.tank);
     this.mover(3, 3, [4, BASE + 1, -69], [-4, BASE + 1, -69], 3.4, M.tank);
     this.mover(3, 3, [0, BASE + 1, -74.5], [0, BASE + 3.5, -74.5], 3.0, M.tank);
@@ -280,47 +285,47 @@ export class Obby {
     this.mover(3, 3, [0, BASE + 3.5, -85.5], [0, BASE + 3.5, -90.5], 3.6, M.tank);
     this.checkpoint(0, BASE + 3.5, -97);
 
-    // 4 · Cheese Collapse
+    // 4 · Rotten Planks
     const layout = [['c', 's', 'c'], ['s', 'c', 'c'], ['c', 'c', 's'], ['c', 's', 'c'], ['s', 'c', 's']];
     layout.forEach((row, r) => row.forEach((kind, col) => {
       const x = (col - 1) * 2.6, z = -103.5 - r * 2.6;
       if (kind === 'c') {
-        const p = this.plat(x, BASE + 3.5, z, 2.2, 2.2, M.cheese.clone(), { h: 0.6, tile: 2.2 });
+        const p = this.plat(x, BASE + 3.5, z, 2.2, 2.2, M.rotten.clone(), { h: 0.6, tile: 2.2 });
         p.mesh.material.transparent = true;
         this.vanishers.push({ ...p, home: p.mesh.position.clone(), state: 'solid', t: 0 });
       } else {
-        this.kills.push(this.plat(x, BASE + 3.35, z, 2.2, 2.2, M.sour, { h: 0.45 }));
+        this.kills.push(this.plat(x, BASE + 3.35, z, 2.2, 2.2, M.toxic, { h: 0.45 }));
       }
     }));
     this.checkpoint(0, BASE + 3.5, -120);
 
-    // 5 · Hay Bounce
+    // 5 · Sandbag Bounce
     this.pad(0, BASE + 3.5, -127, 16);
-    this.plat(0, BASE + 8, -133, 4, 4, M.hay, { h: 1.2 });
+    this.plat(0, BASE + 8, -133, 4, 4, M.sandbag, { h: 1.2 });
     this.pad(0, BASE + 8, -138.5, 16);
-    this.plat(0, BASE + 12.5, -145, 4, 4, M.hay, { h: 1.2 });
+    this.plat(0, BASE + 12.5, -145, 4, 4, M.sandbag, { h: 1.2 });
     this.checkpoint(0, BASE + 12.5, -152);
 
-    // 6 · Udder Tower — 12 spiral steps up to the tower top
+    // 6 · Watchtower — 12 spiral steps up to the tower top
     const cx = 0, cz = -163;
     const bottle = new THREE.Mesh(
-      new THREE.LatheGeometry([[0, 0], [3.6, 0], [3.8, 0.4], [3.8, 16], [3.2, 18.5], [1.8, 20.5], [1.6, 22], [2.0, 22.4], [2.0, 23.2], [0, 23.2]].map(([r, y]) => new THREE.Vector2(r, y)), 32),
-      M.milk,
+      new THREE.LatheGeometry([[0, 0], [3.8, 0], [3.8, 21.8], [4.2, 21.8], [4.2, 23.2], [0, 23.2]].map(([r, y]) => new THREE.Vector2(r, y)), 32),
+      M.paint,
     );
     bottle.position.set(cx, BASE + 1.5, cz);
     bottle.castShadow = true;
     this.add(bottle);
-    const label = new THREE.Mesh(new THREE.CylinderGeometry(3.85, 3.85, 4, 32, 1, true), new THREE.MeshStandardMaterial({ map: this.tex.holstein, side: THREE.DoubleSide }));
+    const label = new THREE.Mesh(new THREE.CylinderGeometry(3.85, 3.85, 4, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xb3261e, roughness: 0.6, side: THREE.DoubleSide }));
     label.position.set(cx, BASE + 9, cz);
     this.add(label);
     for (let i = 0; i < 12; i++) {
       const a = i * 0.63;
-      this.plat(cx + Math.sin(a) * 5.2, BASE + 13.4 + i * 0.9, cz + Math.cos(a) * 5.2, 2, 2, i % 2 ? M.hay : M.crate, { h: 0.7, tile: 2 });
+      this.plat(cx + Math.sin(a) * 5.2, BASE + 13.4 + i * 0.9, cz + Math.cos(a) * 5.2, 2, 2, i % 2 ? M.sandbag : M.crate, { h: 0.7, tile: 2 });
     }
     const T = BASE + 23.3;
     this.checkpoint(cx, T, cz, 5, 5);
 
-    // 7 · Barn Rafters — narrow beams, a sliding beam and a churn sweeper
+    // 7 · Rafters — narrow beams, a sliding beam and a rotor sweeper
     this.plat(0, T, -170, 1.2, 6, M.wood, { h: 0.5 });
     this.plat(1.8, T, -177, 1.2, 5, M.wood, { h: 0.5 });
     this.mover(1.8, 5, [-2.5, T, -184.5], [2.5, T, -184.5], 3.2, M.wood);
@@ -329,7 +334,7 @@ export class Obby {
     const R = T + 0.6;
     this.checkpoint(0, R, -200, 5, 5);
 
-    // 8 · Hay Bale Stampede — rolling bales across a gappy runway
+    // 8 · Barrel Run — rolling barrels across a gappy runway
     this.plat(0, R, -209.5, 6, 9, M.wood, { h: 0.6 });
     this.plat(0, R, -220.5, 6, 9, M.wood, { h: 0.6 });
     this.plat(0, R, -231.5, 6, 9, M.wood, { h: 0.6 });
@@ -344,16 +349,16 @@ export class Obby {
     this.add(this.bell);
     this.finishPoint = [0, F, -242];
 
-    // Cow statues on pillars
+    // Soldier monuments on pillars
     [[-16, -40, 1], [16, -95, -1], [-18, -150, 1], [18, -215, -1]].forEach(([x, z, face], i) => {
       this.plat(x, BASE - 1, z, 6, 6, this.mats.turf, { h: 30, register: false });
-      const cow = new CowModel(i % 2 ? 'CT' : 'T', this.tex);
-      cow.setWeapon('hoof');
-      cow.root.scale.setScalar(3.2);
-      cow.root.position.set(x, BASE - 1, z);
-      cow.root.rotation.y = face > 0 ? -Math.PI / 2 : Math.PI / 2;
-      this.add(cow.root);
-      this.statues.push(cow);
+      const statue = new SoldierModel(i % 2 ? 'CT' : 'T');
+      statue.setWeapon('carbine');
+      statue.root.scale.setScalar(3.2);
+      statue.root.position.set(x, BASE - 1, z);
+      statue.root.rotation.y = face > 0 ? -Math.PI / 2 : Math.PI / 2;
+      this.add(statue.root);
+      this.statues.push(statue);
     });
   }
 
@@ -372,8 +377,8 @@ export class Obby {
       const col = `${x},${z}`;
       if (!this.cellHash.has(col)) this.cellHash.set(col, []);
       this.cellHash.get(col).push(box);
-      if (t === BLOCK.CHEESE) {
-        const mesh = new THREE.Mesh(this.unitBox, this.mats.cheese.clone());
+      if (t === BLOCK.ROTTEN) {
+        const mesh = new THREE.Mesh(this.unitBox, this.mats.rotten.clone());
         mesh.material.transparent = true;
         mesh.position.set(x + 0.5, BASE + y + 0.5, z + 0.5);
         mesh.castShadow = mesh.receiveShadow = true;
@@ -412,13 +417,13 @@ export class Obby {
 
   blockMaterial(t) {
     const M = this.mats;
-    return [M.turf, M.crate, M.hay, M.wood, M.tank, M.cheese, M.sour, M.pad, M.butterBlock, M.turf, M.start, M.gold][t] || M.crate;
+    return [M.turf, M.crate, M.sandbag, M.wood, M.tank, M.rotten, M.toxic, M.pad, M.ice, M.turf, M.start, M.gold][t] || M.crate;
   }
 
   spinner(px, top, z, length, speed) {
     const group = new THREE.Group();
     group.position.set(px, top + 0.9, z);
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, length, 12), this.mats.butter);
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, length, 12), this.mats.hazard);
     bar.rotation.z = Math.PI / 2;
     bar.position.x = length / 2;
     bar.castShadow = true;
@@ -430,7 +435,7 @@ export class Obby {
     churn.position.set(px, top - 2.1, z);
     churn.castShadow = true;
     this.add(churn);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), this.mats.butter);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), this.mats.hazard);
     cap.position.set(px, top + 0.9, z);
     this.add(cap);
     this.spinners.push({ group, px, y: top + 0.9, z, length, speed, angle: Math.random() * 6 });
@@ -442,7 +447,7 @@ export class Obby {
   }
 
   pad(x, top, z, power) {
-    const p = this.plat(x, top, z, 3, 3, this.mats.hay, { h: 1.2 });
+    const p = this.plat(x, top, z, 3, 3, this.mats.sandbag, { h: 1.2 });
     const rim = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.12, 8, 24), this.mats.padRim);
     rim.rotation.x = Math.PI / 2;
     rim.position.set(x, top + 0.12, z);
@@ -455,7 +460,7 @@ export class Obby {
 
   bumper(z, top, period, phase) {
     const group = new THREE.Group();
-    const bale = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.6, 20), this.mats.hay);
+    const bale = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.6, 20), new THREE.MeshStandardMaterial({ map: this.tex.metal, color: 0x6b7a3a, roughness: 0.6, metalness: 0.5 }));
     bale.rotation.x = Math.PI / 2;
     bale.castShadow = true;
     for (const off of [-0.45, 0.45]) {
@@ -538,7 +543,7 @@ export class Obby {
     this.runDistance = 0;
     this.submittedDistance = Number(localStorage.getItem(BEST_DIST_KEY)) || 0;
     this.goneKeys = new Set();
-    this.onButter = false;
+    this.onIce = false;
     for (const c of this.checkpoints) {
       c.reached = c.index === 0;
       if (c.cloth) c.cloth.material = c.reached ? this.mats.flagOn : this.mats.flag;
@@ -569,7 +574,7 @@ export class Obby {
     this.el.fade.style.opacity = '0.85';
     setTimeout(() => { this.el.fade.style.opacity = '0'; }, 180);
     this.spawnAt([cp.spawn[0], cp.spawn[1], cp.spawn[2]]);
-    this.game.audio.moo(null, 1.2);
+    this.game.audio.splash();
     if (!manual) this.toast('SPLASH!', true);
     this.submitDistance(false);
   }
@@ -720,7 +725,7 @@ export class Obby {
       stepBody(b, {
         wx: knocked || dashing ? 0 : wx, wz: knocked || dashing ? 0 : wz, jump: wantJump && b.onGround && !dashing,
         walk: k.has('ShiftLeft'), crouch: false, speedMult: 1.05, airControl: !dashing,
-        slick: dashing || this.onButter, noCap: dashing,
+        slick: dashing || this.onIce, noCap: dashing,
       }, dt, this.custom ? this.nearbyBoxes() : this.boxes);
       if (b.jumped) { b.jumped = false; game.jumpQueued = 0; }
       if (b.landedSpeed > 9) game.audio.land(null);
@@ -765,12 +770,12 @@ export class Obby {
     }
 
     if (this.custom) {
-      this.onButter = false;
+      this.onIce = false;
       for (const [key, t] of this.underfoot()) {
-        if (t === BLOCK.SOUR) { this.respawn(); break; }
+        if (t === BLOCK.TOXIC) { this.respawn(); break; }
         if (t === BLOCK.PAD) { b.vy = 15; b.onGround = false; game.audio.stomp(null); }
-        if (t === BLOCK.BUTTER) this.onButter = true;
-        if (t === BLOCK.CHEESE) { const v = this.vanishers.find((x) => x.key === key); if (v) this.startVanish(v); }
+        if (t === BLOCK.ICE) this.onIce = true;
+        if (t === BLOCK.ROTTEN) { const v = this.vanishers.find((x) => x.key === key); if (v) this.startVanish(v); }
         if (t === BLOCK.CHECK) { const cp = this.checkpoints.find((c) => c.key === key); if (cp) this.reachCheckpoint(cp); }
         if (t === BLOCK.FINISH && !this.finished) this.finish();
       }
@@ -803,15 +808,15 @@ export class Obby {
     if (b.y < KILL_Y) this.respawn();
 
     const speed = Math.hypot(b.vx, b.vz);
-    this.cow.root.position.set(b.x, b.y, b.z);
-    const cur = this.cow.root.rotation.y;
+    this.player.root.position.set(b.x, b.y, b.z);
+    const cur = this.player.root.rotation.y;
     let diff = this.facing - cur;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    this.cow.root.rotation.y = cur + diff * Math.min(1, dt * 12);
-    this.cow.update(dt, { speed, crouch: 0, pitch: 0, onGround: b.onGround });
+    this.player.root.rotation.y = cur + diff * Math.min(1, dt * 12);
+    this.player.update(dt, { speed, crouch: 0, pitch: 0, onGround: b.onGround });
     const diveK = now < this.dashUntil ? 1 : Math.max(0, 1 - (now - this.dashUntil) / 0.25);
-    this.cow.pose.rotation.x = -1.05 * diveK;
-    this.cow.pose.position.y = 0.4 * diveK;
+    this.player.pose.rotation.x = -1.05 * diveK;
+    this.player.pose.position.y = 0.4 * diveK;
     if (now < this.dashUntil) this.spawnPuff(b.x, b.y + 0.4, b.z);
     this.updatePuffs(dt);
     for (const s of this.statues) s.update(dt, { speed: 0, crouch: 0, pitch: Math.sin(this.clock) * 0.2, onGround: true });
@@ -906,8 +911,7 @@ export class Obby {
       this.submitDistance(true);
     }
     this.game.audio.jingle(true);
-    this.game.audio.moo(null, 0.9);
-    this.el.finishTitle.textContent = this.custom ? `${this.def?.name || 'Obby'} complete!` : 'Course complete!';
+    this.el.finishTitle.textContent = this.custom ? `${this.def?.name || 'Course'} complete!` : 'Course complete!';
     this.el.finishTime.textContent = formatRunTime(t);
     const splashes = `${this.deaths} ${this.deaths === 1 ? 'splash' : 'splashes'}`;
     this.el.finishSub.textContent = `${splashes} · ${isBest ? (prev ? `New personal best! (was ${formatRunTime(prev)})` : 'Personal best set!') : `Personal best ${formatRunTime(prev)}`}`;
@@ -932,7 +936,7 @@ export class Obby {
 
   updateHud() {
     if (this.custom) {
-      this.set('stage', `🧱 ${this.def?.name || 'Custom obby'}${this.def?.author ? ` · by ${this.def.author}` : ''}`);
+      this.set('stage', `🧱 ${this.def?.name || 'Custom course'}${this.def?.author ? ` · by ${this.def.author}` : ''}`);
       const total = this.checkpoints.length - 1;
       const reached = this.checkpoints.filter((c) => c.index > 0 && c.reached).length;
       this.set('check', `🚩 ${reached}/${total}`);

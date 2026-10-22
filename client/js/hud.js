@@ -6,7 +6,7 @@ import { weaponIcon } from './viewmodel.js';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-export const KILL_ICONS = { he: 'He-Cheese', molotov: 'Cheese Molotov', bomb: 'Sour Milk Bomb', suicide: 'suicide', fire: 'Cheese Molotov', generic: 'world' };
+export const KILL_ICONS = { he: 'HE Grenade', molotov: 'Molotov', bomb: 'C4', suicide: 'suicide', fire: 'Molotov', generic: 'world' };
 
 export function weaponLabel(id) {
   return WEAPONS[id]?.name || KILL_ICONS[id] || id;
@@ -92,10 +92,10 @@ export class HUD {
     const img = (id, cls = '') => `<img class="${cls}" src="${weaponIcon(id)}" alt="">`;
     if (me.pri) row(1, me.act === me.pri, img(me.pri), esc(WEAPONS[me.pri].name));
     if (me.sec) row(2, me.act === me.sec, img(me.sec), esc(WEAPONS[me.sec].name));
-    row(3, me.act === 'hoof', img('hoof'), 'Hoof');
+    row(3, me.act === 'knife', img('knife'), 'Hoof');
     if (me.gr?.length) row(4, WEAPONS[me.act]?.slot === 'grenade', me.gr.map((g) => img(g, `nade ${g === me.act ? 'sel' : ''}`)).join(''), 'Utility');
     if (me.bomb) row(5, me.act === 'bomb', img('bomb'), 'Bomb');
-    if (me.blocks > 0) row(6, me.act === 'cowblock', img('cowblock'), `Cow Block ×${me.blocks}`);
+    if (me.blocks > 0) row(6, me.act === 'barricade', img('barricade'), `Sandbags ×${me.blocks}`);
     this.el.inventory.innerHTML = rows.join('');
   }
 
@@ -105,8 +105,8 @@ export class HUD {
     this.set('timer', this.el.timer, txt);
     this.el.timer.classList.toggle('warn', phase === 'live' && s <= 10 && !planted);
     this.el.bombIcon.hidden = !planted;
-    this.set('lblT', document.getElementById('scoreTLabel'), 'BULLS');
-    this.set('lblCT', document.getElementById('scoreCTLabel'), 'GUARD');
+    this.set('lblT', document.getElementById('scoreTLabel'), TEAMS.T.short);
+    this.set('lblCT', document.getElementById('scoreCTLabel'), TEAMS.CT.short);
     this.el.aliveT.hidden = false;
     this.el.aliveCT.hidden = false;
     this.set('scoreT', this.el.scoreT, String(score.T));
@@ -281,7 +281,7 @@ export class HUD {
       el.querySelector('.ri-score .t').textContent = `FIRST TO ${cfg.FRAG_LIMIT}`;
       el.querySelector('.ri-score .ct').textContent = `${Math.floor(cfg.TIME / 60)}:${String(cfg.TIME % 60).padStart(2, '0')}`;
       const side = el.querySelector('.ri-side');
-      side.textContent = mode === 'duel' ? 'One opponent · Build cow blocks with 6 · Stomp from above' : 'Everyone is an enemy · Spawn shield is on for a few seconds · Kills earn money · Press B to buy';
+      side.textContent = mode === 'duel' ? 'One opponent · Drop sandbag cover with 6 · Boot-stomp from above' : 'Everyone is an enemy · Spawn shield is on for a few seconds · Kills earn money · Press B to buy';
       side.className = 'ri-side';
       el.hidden = false;
       el.classList.remove('show');
@@ -293,10 +293,10 @@ export class HUD {
     }
     const half = round === 8;
     el.querySelector('.ri-round').textContent = half ? `ROUND ${round} · SECOND HALF` : `ROUND ${round}`;
-    el.querySelector('.ri-score .t').textContent = `BULLS ${score.T}`;
-    el.querySelector('.ri-score .ct').textContent = `${score.CT} GUARD`;
+    el.querySelector('.ri-score .t').textContent = `${TEAMS.T.short} ${score.T}`;
+    el.querySelector('.ri-score .ct').textContent = `${score.CT} ${TEAMS.CT.short}`;
     const side = el.querySelector('.ri-side');
-    side.textContent = team === 'T' ? 'ROGUE BULLS · Plant the Sour Milk Bomb at A or B' : 'DAIRY GUARD · Defend both sites';
+    side.textContent = team === 'T' ? `${TEAMS.T.name.toUpperCase()} · Plant the C4 at A or B` : `${TEAMS.CT.name.toUpperCase()} · Defend both sites`;
     side.className = `ri-side ${team}`;
     el.hidden = false;
     el.classList.remove('show');
@@ -460,7 +460,7 @@ export class HUD {
     if (!show) return;
     const ffa = mode === 'ffa' || mode === 'duel';
     document.querySelector('.sb-team.t').hidden = ffa;
-    this.set('sbTitle', document.getElementById('sbTitleCT'), ffa ? (mode === 'duel' ? '1V1 DUEL' : 'FREE FOR ALL') : 'DAIRY GUARD');
+    this.set('sbTitle', document.getElementById('sbTitleCT'), ffa ? (mode === 'duel' ? '1V1 DUEL' : 'FREE FOR ALL') : TEAMS.CT.name.toUpperCase());
     if (ffa) {
       const rows = [...roster].sort((a, b) => b.k - a.k || a.d - b.d);
       const html = rows.map((p, i) => `<tr class="${p.alive ? '' : 'dead'} ${p.id === meId ? 'me' : ''}">

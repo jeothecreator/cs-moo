@@ -1,0 +1,14 @@
+3D models used in FRONTLINE
+===========================
+
+m4.glb — "M4 Carbine Rifle" by UmangRank
+  https://sketchfab.com/3d-models/m4-carbine-rifle-3d028a9e936e4f58a5f10e2339ed7f88
+  Licence: Sketchfab Standard (use in games / derivative works allowed; no redistribution as a standalone asset)
+
+fp_rifle.glb — "SCAR-H first person FPS animated" (first-person arms + SCAR-H, draw/fire/reload animation)
+fp_pistol.glb — animated first-person pistol rig (hands, sleeves, pistol; Take/Idle/Shoot/Reload)
+soldier.glb — "Hunter" rigged character (Mixamo skeleton)
+  Supplied by the project owner. Source and licence to be confirmed before public release.
+
+Processing: FBX → glTF with FBX2glTF; textures re-attached, resized and converted to WebP and
+geometry compressed with glTF-Transform.

@@ -2,7 +2,7 @@
 import { performance } from 'node:perf_hooks';
 import {
   TICK_RATE, SNAPSHOT_RATE, LAG_COMP_MAX, ROUND, ECON, PLAYER, WEAPONS, EQUIPMENT, RECOIL,
-  UTIL, GRENADE_IDS, MAX_GRENADES, FFA, DEFAULT_PRIMARY, REGEN, BLOCKS, modeConfig, lossBonus,
+  UTIL, GRENADE_IDS, MAX_GRENADES, FFA, DEFAULT_PRIMARY, REGEN, BLOCKS, TEAMS, modeConfig, lossBonus,
 } from '../shared/constants.js';
 import { MAP, MODES, setActiveMap, instanceMap, inRect, siteAt } from '../shared/map.js';
 import {
@@ -88,7 +88,7 @@ export class Match {
       kills: 0, deaths: 0, assists: 0, mvps: 0, score: 0, roundKills: 0,
       body: newBody(), yaw: 0, pitch: 0, walk: false, scoped: 0,
       input: { wx: 0, wz: 0 },
-      weapons: { primary: DEFAULT_PRIMARY, secondary: 'udder9', grenades: [], bomb: false, kit: false },
+      weapons: { primary: DEFAULT_PRIMARY, secondary: 'p9', grenades: [], bomb: false, kit: false },
       ammo: {},
       loadout: { primary: null, secondary: null },
       active: DEFAULT_PRIMARY, lastShot: 0, reloadEnd: 0, recoilIndex: 0,
@@ -123,7 +123,7 @@ export class Match {
       this.ensureBots();
       if (this.phase === 'buy' || (this.ffa && this.phase === 'live')) this.spawn(p, true);
     }
-    this.chatSystem(this.ffa ? `${name} joined the free-for-all` : `${name} joined the ${team === 'T' ? 'Rogue Bulls' : 'Dairy Guard'}`);
+    this.chatSystem(this.ffa ? `${name} joined the free-for-all` : `${name} joined the ${TEAMS[team].name}`);
     this.sendRoster();
     return p;
   }
@@ -191,7 +191,7 @@ export class Match {
   ensureBots() {
     const used = new Set([...this.players.values()].map((p) => p.name));
     const nextName = () => {
-      const n = BOT_NAMES.find((x) => !used.has(x)) || `Cow ${this.nextId}`;
+      const n = BOT_NAMES.find((x) => !used.has(x)) || `Recruit ${this.nextId}`;
       used.add(n);
       return n;
     };
@@ -318,12 +318,12 @@ export class Match {
     if (this.ffa) {
       p.armor = 100;
       p.helmet = true;
-      p.weapons = { primary: p.loadout.primary || DEFAULT_PRIMARY, secondary: p.loadout.secondary || 'udder9', grenades: [], bomb: false, kit: false };
+      p.weapons = { primary: p.loadout.primary || DEFAULT_PRIMARY, secondary: p.loadout.secondary || 'p9', grenades: [], bomb: false, kit: false };
       p.ammo = {};
     } else if (resetGear) {
       p.armor = 0; p.helmet = false;
       const owned = (id) => id && WEAPONS[id] && (WEAPONS[id].team === 'any' || WEAPONS[id].team === p.team) ? id : null;
-      p.weapons = { primary: owned(p.loadout.primary) || DEFAULT_PRIMARY, secondary: owned(p.loadout.secondary) || 'udder9', grenades: [], bomb: false, kit: false };
+      p.weapons = { primary: owned(p.loadout.primary) || DEFAULT_PRIMARY, secondary: owned(p.loadout.secondary) || 'p9', grenades: [], bomb: false, kit: false };
       p.ammo = {};
     }
     if (p.team !== 'CT') p.weapons.kit = false;
@@ -357,7 +357,7 @@ export class Match {
     }
 
     let mvp = null, mvpReason = '';
-    if (reason === 'bomb' && this.bomb.planter) { mvp = this.players.get(this.bomb.planter); mvpReason = 'for planting the Sour Milk Bomb'; }
+    if (reason === 'bomb' && this.bomb.planter) { mvp = this.players.get(this.bomb.planter); mvpReason = 'for planting the C4'; }
     if (reason === 'defuse' && this.bomb.defuser) { mvp = this.players.get(this.bomb.defuser); mvpReason = 'for defusing the bomb'; }
     if (!mvp) {
       const cands = this.teamPlayers(winner).sort((a, b) => b.roundKills - a.roundKills);
@@ -528,7 +528,7 @@ export class Match {
 
   hasWeapon(p, id) {
     const w = p.weapons;
-    return id === 'hoof' || w.primary === id || w.secondary === id || w.grenades.includes(id) || (id === 'bomb' && w.bomb) || (id === 'cowblock' && p.blocksLeft > 0);
+    return id === 'knife' || w.primary === id || w.secondary === id || w.grenades.includes(id) || (id === 'bomb' && w.bomb) || (id === 'barricade' && p.blocksLeft > 0);
   }
 
   startReload(p) {
@@ -716,7 +716,7 @@ export class Match {
         const dist = Math.hypot(dx, dz);
         if (dist < 1.5 && (dx * d[0] + dz * d[2]) / (dist || 1) > 0.7) t = dist;
       }
-      if (t != null && t <= WEAPONS.hoof.range + 0.2 && (!best || t < best.t)) best = { q, t, group: hit?.group || 'body' };
+      if (t != null && t <= WEAPONS.knife.range + 0.2 && (!best || t < best.t)) best = { q, t, group: hit?.group || 'body' };
     }
     this.broadcast({ t: 'swing', id: p.id, alt, hit: !!best }, p.bot ? null : p);
     if (!best) return;
@@ -726,7 +726,7 @@ export class Match {
     const l = Math.hypot(...toVictim) || 1;
     const backstab = (view[0] * toVictim[0] + view[2] * toVictim[1]) / l > 0.5;
     const raw = alt ? (backstab ? 180 : 65) : (backstab ? 90 : 40);
-    this.damage(q, p, raw, 'body', WEAPONS.hoof, { from: o });
+    this.damage(q, p, raw, 'body', WEAPONS.knife, { from: o });
   }
 
   damage(victim, attacker, raw, group, w, opts = {}) {
@@ -814,7 +814,7 @@ export class Match {
     };
     this.nades.push(n);
     if (p.active === g) {
-      p.active = p.weapons.grenades.includes(g) ? g : (p.weapons.grenades[0] || p.weapons.primary || p.weapons.secondary || 'hoof');
+      p.active = p.weapons.grenades.includes(g) ? g : (p.weapons.grenades[0] || p.weapons.primary || p.weapons.secondary || 'knife');
     }
     this.broadcast({ t: 'throw', id: p.id, n: n.id, g });
     this.sendYou(p);
@@ -869,7 +869,7 @@ export class Match {
     const pos = [n.x, n.y, n.z];
     const owner = this.players.get(n.owner);
     const nowS = this.nowS;
-    if (n.type === 'butter') {
+    if (n.type === 'flashbang') {
       for (const q of this.players.values()) {
         if (!q.alive) continue;
         const eye = this.eye(q);
@@ -950,7 +950,7 @@ export class Match {
     this.broadcast({ t: 'puddle', p: [x, y, z].map(r2), left: UTIL.PUDDLE_DURATION });
   }
 
-  // ─── Cow blocks ─────────────────────────────────────────────
+  // ─── Barricades ─────────────────────────────────────────────
   placeBlock(p, msg) {
     if (!p.alive || this.phase === 'waiting' || this.phase === 'over' || !(p.blocksLeft > 0)) return;
     if (this.nowS - (p.lastPlace || 0) < BLOCKS.COOLDOWN) return;
@@ -975,12 +975,12 @@ export class Match {
       const qb = q.body, h = playerHeight(qb.crouch), r = PLAYER.RADIUS;
       if (max[0] > qb.x - r && min[0] < qb.x + r && max[1] > qb.y && min[1] < qb.y + h && max[2] > qb.z - r && min[2] < qb.z + r) return;
     }
-    const block = { min, max, mat: 'cowblock', dyn: true, id: this.blockId++, owner: p.id, hp: BLOCKS.HP, born: this.nowS };
+    const block = { min, max, mat: 'barricade', dyn: true, id: this.blockId++, owner: p.id, hp: BLOCKS.HP, born: this.nowS };
     boxes.push(block);
     this.blocks.set(block.id, block);
     p.blocksLeft--;
     p.lastPlace = this.nowS;
-    if (p.blocksLeft <= 0 && p.active === 'cowblock') p.active = p.weapons.primary || p.weapons.secondary || 'hoof';
+    if (p.blocksLeft <= 0 && p.active === 'barricade') p.active = p.weapons.primary || p.weapons.secondary || 'knife';
     this.broadcast({ t: 'block', op: 'add', id: block.id, c: min, owner: p.id });
     this.sendYou(p);
   }
@@ -1046,7 +1046,7 @@ export class Match {
   // ─── Bomb (defusal only) ────────────────────────────────────
   dropBomb(p, thrown = false) {
     p.weapons.bomb = false;
-    if (p.active === 'bomb') p.active = p.weapons.primary || p.weapons.secondary || 'hoof';
+    if (p.active === 'bomb') p.active = p.weapons.primary || p.weapons.secondary || 'knife';
     const f = thrown ? dirFromAngles(p.yaw, 0) : [0, 0, 0];
     let x = p.body.x + f[0] * 1.5, z = p.body.z + f[2] * 1.5;
     if (!this.nav.walkableAt(x, z)) { x = p.body.x; z = p.body.z; }
@@ -1102,7 +1102,7 @@ export class Match {
   plant(p) {
     const body = p.body;
     p.weapons.bomb = false;
-    if (p.active === 'bomb') p.active = p.weapons.primary || p.weapons.secondary || 'hoof';
+    if (p.active === 'bomb') p.active = p.weapons.primary || p.weapons.secondary || 'knife';
     const site = siteAt(body.x, body.z);
     this.bomb = { state: 'planted', pos: [body.x, body.y, body.z], site, explodeAt: this.nowS + ROUND.BOMB_TIMER, planter: p.id };
     this.planted = true;
@@ -1167,7 +1167,7 @@ export class Match {
       if (!p.bot || !p.alive) continue;
       p.brain.update(dt);
       if (this.phase === 'buy') continue;
-      const w = WEAPONS[p.active] || WEAPONS.hoof;
+      const w = WEAPONS[p.active] || WEAPONS.knife;
       let speedMult = w.speedMult || 1;
       if (p.scoped && w.scopedSpeedMult) speedMult = w.scopedSpeedMult;
       const inp = p.input;

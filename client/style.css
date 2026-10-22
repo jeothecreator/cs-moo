@@ -516,3 +516,14 @@ body.obby #teamBtn, body.obby #inviteBox { display: none; }
   .obby-columns, .lb-grid, .obby-buttons { grid-template-columns: 1fr; }
   .ed-top { flex-wrap: wrap; justify-content: center; max-width: 94vw; }
 }
+
+/* ── Bodycam burn-in ── */
+#bodycamOverlay { display: none; position: absolute; top: 12px; right: 16px; flex-direction: column; align-items: flex-end; gap: 2px;
+  font: 600 15px/1.25 "SF Mono", "Menlo", "Consolas", monospace; color: #f4f1e8; letter-spacing: .6px;
+  text-shadow: 0 0 2px #000, 1px 1px 0 #000; opacity: .9; pointer-events: none; }
+body.bodycam #bodycamOverlay { display: flex; }
+body.bodycam #killfeed { top: 78px; }
+#bodycamOverlay .bc-rec { display: flex; align-items: center; gap: 6px; color: #ff3b30; font-weight: 800; }
+#bodycamOverlay .bc-rec i { width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; animation: bcblink 1s steps(2, start) infinite; }
+#bodycamOverlay .bc-unit { font-size: 12px; opacity: .8; }
+@keyframes bcblink { to { visibility: hidden; } }

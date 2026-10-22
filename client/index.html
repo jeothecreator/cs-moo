@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CS:Moo — Counter-Strike: Bovine Operations</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐄</text></svg>" />
+  <title>FRONTLINE — Tactical Shooter</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪖</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Bebas+Neue&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Bebas+Neue&family=Noto+Sans+KR:wght@700;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
   <script type="importmap">
     { "imports": { "three": "/lib/three/three.module.js", "three/addons/": "/lib/three-addons/" } }
@@ -22,8 +22,8 @@
 
     <header class="menu-top">
       <div class="logo">
-        <div class="logo-cs">CS<span>:</span>MOO</div>
-        <div class="logo-sub">COUNTER-STRIKE · BOVINE OPERATIONS</div>
+        <div class="logo-cs">FRONT<span>LINE</span></div>
+        <div class="logo-sub">TACTICAL OPERATIONS</div>
       </div>
       <nav class="menu-nav">
         <button class="nav-btn active" data-tab="play">Play</button>
@@ -33,7 +33,7 @@
         <button class="nav-btn" data-tab="howto">How to play</button>
       </nav>
       <label class="menu-profile">
-        <span class="avatar">🐄</span>
+        <span class="avatar">🪖</span>
         <span class="pf-text"><span class="pf-label">Callsign</span><input id="nameInput" maxlength="16" placeholder="Enter your name" /></span>
       </label>
     </header>
@@ -47,31 +47,31 @@
         <div class="mode-grid mode-pick">
           <button class="mode-card defusal" data-mode="defusal">
             <span class="mc-art">💣</span><span class="mc-tag">5v5 · Team</span>
-            <span class="mc-title">Defusal</span><span class="mc-map">de_barnyard</span>
-            <span class="mc-desc">Plant or defuse the Sour Milk Bomb. First to 8 rounds.</span>
+            <span class="mc-title">Defusal</span><span class="mc-map">de_trenches</span>
+            <span class="mc-desc">Plant or defuse the C4 on the front line. First to 8 rounds.</span>
           </button>
           <button class="mode-card ffa" data-mode="ffa">
             <span class="mc-art">🎯</span><span class="mc-tag">Everyone vs everyone</span>
-            <span class="mc-title">Free-for-all</span><span class="mc-map">dm_creamery</span>
-            <span class="mc-desc">Kills earn money, guns stay with you. First to 20.</span>
+            <span class="mc-title">Free-for-all</span><span class="mc-map">dm_seoul</span>
+            <span class="mc-desc">A Seoul street block at dusk. Kills earn money, guns stay with you. First to 20.</span>
           </button>
           <button class="mode-card duel" data-mode="duel">
             <span class="mc-art">⚔️</span><span class="mc-tag">1v1 · Head-to-head</span>
-            <span class="mc-title">1v1 Duel</span><span class="mc-map">aim_pasture</span>
-            <span class="mc-desc">Build cow blocks, stomp from above. First to 10.</span>
+            <span class="mc-title">1v1 Duel</span><span class="mc-map">aim_rooftop</span>
+            <span class="mc-desc">Rooftop showdown. Drop sandbag cover, stomp from above. First to 10.</span>
           </button>
           <button class="mode-card obby" data-mode="obby">
             <span class="mc-art">🏁</span><span class="mc-tag">Solo · Obstacle course</span>
-            <span class="mc-title">Udder Chaos Obby</span><span class="mc-map">sky farm</span>
-            <span class="mc-desc">Six cow-themed stages over a sea of milk. Beat your best time.</span>
+            <span class="mc-title">Assault Course</span><span class="mc-map">open water</span>
+            <span class="mc-desc">Eight stages of jumps, rotors and collapsing planks. Beat your best time.</span>
           </button>
         </div>
 
         <div class="play-actions" id="mpActions">
           <div class="team-pick">
-            <button class="team-card t" data-team="T"><div class="tc-emblem">🐂</div><div class="tc-name">Rogue Bulls</div><div class="tc-role">Attackers · Plant the bomb</div></button>
+            <button class="team-card t" data-team="T"><div class="tc-emblem">⚔️</div><div class="tc-name">Insurgents</div><div class="tc-role">Attackers · Plant the C4</div></button>
             <button class="team-card auto selected" data-team="auto"><div class="tc-emblem">🎲</div><div class="tc-name">Auto-assign</div><div class="tc-role">Balance the teams</div></button>
-            <button class="team-card ct" data-team="CT"><div class="tc-emblem">🐄</div><div class="tc-name">Dairy Guard</div><div class="tc-role">Defenders · Protect the sites</div></button>
+            <button class="team-card ct" data-team="CT"><div class="tc-emblem">🛡️</div><div class="tc-name">Task Force</div><div class="tc-role">Defenders · Protect the sites</div></button>
           </div>
           <div class="action-row">
             <button id="playBtn" class="primary-btn">Quick play · Public</button>
@@ -87,27 +87,27 @@
         <div class="play-actions" id="obbyActions" hidden>
           <div class="obby-card">
             <div class="oc-main">
-              <div class="oc-title">Udder Chaos Obby</div>
+              <div class="oc-title">Assault Course</div>
               <div class="oc-stages">
-                <span>🌾 Pasture Hop</span><span>🧈 Churn Spinners</span><span>🥛 Milk Tank Express</span><span>🧀 Cheese Collapse</span>
-                <span>🌀 Hay Bounce</span><span>🍼 Udder Tower</span><span>🪵 Barn Rafters</span><span>🐂 Hay Bale Stampede</span>
+                <span>🌱 Turf Hop</span><span>🌀 Rotor Sweep</span><span>🛢️ Tank Express</span><span>🪵 Rotten Planks</span>
+                <span>⬆️ Sandbag Bounce</span><span>🗼 Watchtower</span><span>🏗️ Rafters</span><span>🛢️ Barrel Run</span>
               </div>
               <div class="oc-tips">E to dash (jump + dash for distance) · Checkpoints save your progress · R returns to the last checkpoint</div>
             </div>
             <div class="oc-best"><span>Your best</span><b id="obbyBestMenu">—</b></div>
           </div>
           <div class="obby-buttons">
-            <button id="obbyBtn" class="primary-btn">Play Udder Chaos</button>
-            <button id="obbyCreateBtn" class="ghost-btn">🛠 Obby Creator</button>
+            <button id="obbyBtn" class="primary-btn">Run the course</button>
+            <button id="obbyCreateBtn" class="ghost-btn">🛠 Course Creator</button>
             <div class="code-join">
-              <input id="obbyCodeInput" maxlength="8" placeholder="OBBY CODE" autocomplete="off" spellcheck="false" />
+              <input id="obbyCodeInput" maxlength="8" placeholder="COURSE CODE" autocomplete="off" spellcheck="false" />
               <button id="obbyCodeBtn" class="ghost-btn">Play</button>
             </div>
           </div>
           <div class="obby-columns">
             <div class="obby-col"><div class="ol-title">🏆 Distance leaderboard</div><div id="obbyLeaderboardList" class="ol-list"></div></div>
-            <div class="obby-col"><div class="ol-title">🧱 Community obbies <button class="link" id="obbyRefresh">Refresh</button></div><div id="communityList" class="ol-list"></div></div>
-            <div class="obby-col"><div class="ol-title">📁 My obbies</div><div id="myObbyList" class="ol-list"></div></div>
+            <div class="obby-col"><div class="ol-title">🧱 Community courses <button class="link" id="obbyRefresh">Refresh</button></div><div id="communityList" class="ol-list"></div></div>
+            <div class="obby-col"><div class="ol-title">📁 My courses</div><div id="myObbyList" class="ol-list"></div></div>
           </div>
         </div>
         <div id="menuError" class="menu-error"></div>
@@ -117,12 +117,12 @@
         <div class="lb-head"><h2>Leaderboards</h2><button class="link" id="lbRefresh">Refresh</button></div>
         <div class="lb-grid">
           <div class="lb-card"><div class="lb-title">🎯 Most kills <small>Real players · all multiplayer modes</small></div><div id="lbKills" class="ol-list tall"></div></div>
-          <div class="lb-card"><div class="lb-title">🏁 Obby distance <small>Udder Chaos · finishers ranked by time</small></div><div id="lbObby" class="ol-list tall"></div></div>
+          <div class="lb-card"><div class="lb-title">🏁 Course distance <small>Assault Course · finishers ranked by time</small></div><div id="lbObby" class="ol-list tall"></div></div>
         </div>
       </section>
 
       <section class="menu-panel" data-panel="arsenal" hidden>
-        <h2>Dairy Arsenal</h2>
+        <h2>Arsenal</h2>
         <div id="arsenalList" class="arsenal"></div>
       </section>
 
@@ -134,16 +134,16 @@
       <section class="menu-panel" data-panel="howto" hidden>
         <h2>How to play</h2>
         <div class="howto">
-          <p><b>Defusal:</b> Rogue Bulls plant the Sour Milk Bomb at site <b>A</b> or <b>B</b>; Dairy Guard stop the plant or defuse it. First team to <b>8</b> rounds wins; sides swap at halftime.</p>
-          <p><b>Free-for-all</b> and <b>1v1 Duel:</b> every kill earns Gallons ($). Buy anytime with <b>B</b>; guns you buy stay with you when you respawn.</p>
-          <p><b>Cow Blocks:</b> press <b>6</b> to build. Climb your blocks and land on an enemy's head for a <b>Moo Stomp</b>.</p>
-          <p><b>Udder Chaos Obby:</b> a solo obstacle course. Reach the golden cowbell as fast as you can.</p>
+          <p><b>Defusal:</b> the Insurgents plant the C4 at site <b>A</b> or <b>B</b>; the Task Force stop the plant or defuse it. First team to <b>8</b> rounds wins; sides swap at halftime.</p>
+          <p><b>Free-for-all</b> and <b>1v1 Duel:</b> every kill earns cash ($). Buy anytime with <b>B</b>; guns you buy stay with you when you respawn.</p>
+          <p><b>Sandbags:</b> press <b>6</b> to drop cover. Climb your sandbags and land on an enemy's head for a <b>Boot Stomp</b>.</p>
+          <p><b>Assault Course:</b> a solo obstacle course over open water. Ring the brass bell at the end as fast as you can.</p>
           <div class="keys">
             <div><kbd>W A S D</kbd> Move</div><div><kbd>Mouse</kbd> Aim / Fire</div>
             <div><kbd>Space</kbd> Jump</div><div><kbd>Right click</kbd> Aim down sights</div>
             <div><kbd>Ctrl</kbd> / <kbd>C</kbd> Crouch (crouch-jump)</div><div><kbd>Shift</kbd> Walk</div>
             <div><kbd>R</kbd> Reload</div><div><kbd>1-5</kbd> / <kbd>Wheel</kbd> Weapons</div>
-            <div><kbd>6</kbd> / <kbd>X</kbd> Cow Block</div><div><kbd>F</kbd> Inspect weapon</div>
+            <div><kbd>6</kbd> / <kbd>X</kbd> Sandbags</div><div><kbd>F</kbd> Inspect weapon</div>
             <div><kbd>B</kbd> Buy menu</div><div><kbd>E</kbd> Plant / Defuse</div>
             <div><kbd>Tab</kbd> Scoreboard</div><div><kbd>Y</kbd> / <kbd>U</kbd> Chat / Team chat</div>
             <div><kbd>M</kbd> Change team</div><div><kbd>Esc</kbd> Menu</div>
@@ -155,7 +155,7 @@
     <footer class="menu-foot">
       <span class="made-by">Made by <b>Jeo Metelitsa</b></span>
       <span class="dot">•</span>
-      <span>CS:Moo — Defusal · Free-for-all · 1v1 Duel · Solo Obby</span>
+      <span>FRONTLINE — Defusal · Free-for-all · 1v1 Duel · Assault Course</span>
     </footer>
   </div>
 
@@ -173,9 +173,9 @@
 
     <div id="topbar">
       <div class="alive-row t" id="aliveT"></div>
-      <div class="score-box t"><small id="scoreTLabel">BULLS</small><b id="scoreT">0</b></div>
+      <div class="score-box t"><small id="scoreTLabel">INS</small><b id="scoreT">0</b></div>
       <div class="timer-box"><span id="timerText">0:00</span><div id="bombIcon" hidden>💣</div><small id="roundText">ROUND 1</small></div>
-      <div class="score-box ct"><b id="scoreCT">0</b><small id="scoreCTLabel">GUARD</small></div>
+      <div class="score-box ct"><b id="scoreCT">0</b><small id="scoreCTLabel">TF</small></div>
       <div class="alive-row ct" id="aliveCT"></div>
     </div>
 
@@ -185,13 +185,14 @@
     <div id="spawnShield" hidden>SPAWN SHIELD</div>
 
     <div id="killfeed"></div>
+    <div id="bodycamOverlay"><span class="bc-rec"><i></i>REC</span><span id="bcStamp"></span><span class="bc-unit">FRONTLINE BODY CAM · X7-0419</span></div>
 
     <div id="vitals">
       <div class="vital hp"><svg viewBox="0 0 24 24"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z"/></svg><b id="hpText">100</b><div class="vbar"><i id="hpBar"></i></div></div>
       <div class="vital armor"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 9.5-8 11-4.5-1.5-8-6-8-11V5z"/></svg><b id="armorText">0</b><span id="helmetIcon" hidden>⛑</span><div class="vbar"><i id="armorBar"></i></div></div>
     </div>
 
-    <div id="ammo"><div id="weaponName">Udder-Nine</div><div class="ammo-row"><b id="magText">18</b><span>/</span><em id="reserveText">90</em></div></div>
+    <div id="ammo"><div id="weaponName">P9 Pistol</div><div class="ammo-row"><b id="magText">18</b><span>/</span><em id="reserveText">90</em></div></div>
     <div id="inventory"></div>
 
     <div id="centerMsg"></div>
@@ -211,8 +212,8 @@
 
   <div id="editorHud" hidden>
     <div class="ed-top">
-      <span class="ed-logo">🛠 Obby Creator</span>
-      <input id="edName" maxlength="32" placeholder="Name your obby" />
+      <span class="ed-logo">🛠 Course Creator</span>
+      <input id="edName" maxlength="32" placeholder="Name your course" />
       <span class="ed-count" id="edCount">0 blocks</span>
       <button class="ed-btn" id="edUndo">↶ Undo</button>
       <button class="ed-btn" id="edNew">New</button>
@@ -227,8 +228,8 @@
     <div class="ed-toast" id="edToast"></div>
     <div class="ed-share" id="edShare" hidden>
       <div class="es-card">
-        <div class="es-title">Obby published! 🎉</div>
-        <div class="es-sub">Share the code or link — friends can play it from the Obby tab.</div>
+        <div class="es-title">Course published! 🎉</div>
+        <div class="es-sub">Share the code or link — friends can play it from the Assault Course tab.</div>
         <div class="es-code" id="edShareCode"></div>
         <div class="es-link" id="edShareLink"></div>
         <div class="es-btns"><button class="primary-btn" id="edCopy">Copy invite link</button><button class="ghost-btn" id="edShareClose">Keep building</button></div>
@@ -238,7 +239,7 @@
 
   <div id="obbyHud" hidden>
     <div class="ob-top">
-      <div class="ob-stage" id="obStage">Stage 1 · Pasture Hop</div>
+      <div class="ob-stage" id="obStage">Stage 1 · Turf Hop</div>
       <div class="ob-timer" id="obTimer">0:00.00</div>
       <div class="ob-stats"><span id="obDeaths">💦 0</span><span id="obCheck">🚩 0/5</span><span id="obBest">🏆 —</span><span id="obDash" class="ob-dash ready">⚡ DASH</span></div>
     </div>
@@ -267,9 +268,9 @@
 
   <div id="scoreboard" class="overlay" hidden>
     <div class="sb-panel">
-      <div class="sb-head"><span id="sbMap">de_barnyard</span><span id="sbRound"></span></div>
-      <div class="sb-team ct"><div class="sb-title"><b id="sbScoreCT">0</b> <span id="sbTitleCT">DAIRY GUARD</span></div><table><thead><tr><th></th><th>Player</th><th>$</th><th>K</th><th>A</th><th>D</th><th>★</th><th>Score</th><th>Ping</th></tr></thead><tbody id="sbCT"></tbody></table></div>
-      <div class="sb-team t"><div class="sb-title"><b id="sbScoreT">0</b> ROGUE BULLS</div><table><thead><tr><th></th><th>Player</th><th>$</th><th>K</th><th>A</th><th>D</th><th>★</th><th>Score</th><th>Ping</th></tr></thead><tbody id="sbT"></tbody></table></div>
+      <div class="sb-head"><span id="sbMap">de_trenches</span><span id="sbRound"></span></div>
+      <div class="sb-team ct"><div class="sb-title"><b id="sbScoreCT">0</b> <span id="sbTitleCT">TASK FORCE</span></div><table><thead><tr><th></th><th>Player</th><th>$</th><th>K</th><th>A</th><th>D</th><th>★</th><th>Score</th><th>Ping</th></tr></thead><tbody id="sbCT"></tbody></table></div>
+      <div class="sb-team t"><div class="sb-title"><b id="sbScoreT">0</b> INSURGENTS</div><table><thead><tr><th></th><th>Player</th><th>$</th><th>K</th><th>A</th><th>D</th><th>★</th><th>Score</th><th>Ping</th></tr></thead><tbody id="sbT"></tbody></table></div>
     </div>
   </div>
 
@@ -291,10 +292,10 @@
 
   <div id="teamSelect" class="overlay" hidden>
     <div class="ts-panel">
-      <h3>CHOOSE YOUR HERD</h3>
+      <h3>CHOOSE YOUR SIDE</h3>
       <div class="team-pick">
-        <button class="team-card t" data-switch="T"><div class="tc-emblem">🐂</div><div class="tc-name">Rogue Bulls</div><div class="tc-role">Attackers</div></button>
-        <button class="team-card ct" data-switch="CT"><div class="tc-emblem">🐄</div><div class="tc-name">Dairy Guard</div><div class="tc-role">Defenders</div></button>
+        <button class="team-card t" data-switch="T"><div class="tc-emblem">⚔️</div><div class="tc-name">Insurgents</div><div class="tc-role">Attackers</div></button>
+        <button class="team-card ct" data-switch="CT"><div class="tc-emblem">🛡️</div><div class="tc-name">Task Force</div><div class="tc-role">Defenders</div></button>
       </div>
       <button class="ghost-btn" id="tsClose">Cancel</button>
     </div>
@@ -305,7 +306,7 @@
   </div>
 
   <div id="clickToPlay" class="overlay" hidden><div class="ctp">Click to play</div></div>
-  <div id="loading" class="screen" hidden><div class="spinner"></div><div>Connecting to the herd…</div><div class="loading-credit">Made by Jeo Metelitsa</div></div>
+  <div id="loading" class="screen" hidden><div class="spinner"></div><div>Deploying…</div><div class="loading-credit">Made by Jeo Metelitsa</div></div>
 
   <script type="module" src="js/main.js"></script>
 </body>

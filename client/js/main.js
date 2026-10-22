@@ -1,11 +1,12 @@
 // Bootstrap: menus, settings persistence, joining a match.
-import { WEAPONS, UTIL } from '/shared/constants.js';
+import { WEAPONS, UTIL, TEAMS } from '/shared/constants.js';
 import { MODES } from '/shared/map.js';
 import { Game } from './game.js';
 import { formatRunTime } from './obby.js';
 import { myObbies, inviteLink } from './obbyEditor.js';
 import { HUD } from './hud.js';
 import { AudioEngine } from './audio.js';
+import { preloadAssets } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,6 +26,7 @@ const DEFAULTS = {
   renderScale: Math.min(window.devicePixelRatio || 1, 1.5),
   shadows: true,
   quality: 'high',
+  style: 'bodycam',
 };
 
 function loadSettings() {
@@ -33,6 +35,11 @@ function loadSettings() {
 function saveSettings(s) {
   try { localStorage.setItem('csmoo.settings', JSON.stringify(s)); } catch { /* storage unavailable */ }
 }
+
+// Korean shop signage is painted into canvases when a map is built, so the webfont has to be ready
+// first (capped, so a slow font CDN never blocks the menu). Models stream in behind the menu.
+await Promise.race([document.fonts.load('900 64px "Noto Sans KR"'), new Promise((r) => setTimeout(r, 2500))]).catch(() => {});
+const assetsReady = preloadAssets();
 
 const settings = loadSettings();
 const hud = new HUD();
@@ -45,6 +52,18 @@ const game = new Game({
 });
 hud.applyCrosshair(settings);
 window.csmoo = game;
+document.body.classList.toggle('bodycam', settings.style !== 'tactical');
+
+// Bodycam burn-in: date / time like real footage, ticking every second.
+{
+  const pad = (n) => String(n).padStart(2, '0');
+  const tick = () => {
+    const d = new Date();
+    $('bcStamp').textContent = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+  tick();
+  setInterval(tick, 1000);
+}
 
 // ─── Settings form (menu + pause) ─────────────────────────────
 const FIELDS = [
@@ -63,6 +82,7 @@ const FIELDS = [
   { key: 'renderScale', label: 'Render scale', type: 'range', min: 0.5, max: 2, step: 0.25 },
   { key: 'shadows', label: 'Shadows (reload)', type: 'checkbox' },
   { key: 'quality', label: 'Graphics quality', type: 'select', options: ['low', 'medium', 'high', 'ultra'] },
+  { key: 'style', label: 'Visual style', type: 'select', options: ['bodycam', 'tactical'] },
 ];
 
 function buildSettings(container, compact = false) {
@@ -111,18 +131,18 @@ buildSettings($('settingsForm'));
 {
   const list = $('arsenalList');
   const util = {
-    butter: `Blinds enemies in butter for up to ${UTIL.FLASH_MAX}s`,
-    molotov: `Melted fondue pool · ${UTIL.FIRE_DPS} dmg/s · slows`,
-    smoke: `Sour green stink cloud for ${UTIL.SMOKE_DURATION}s`,
-    cowblock: 'Free every life · Left click to place, right click to pick up · Climb it, then Moo Stomp enemies from above',
-    he: `Curd fragments · up to ${UTIL.HE_DAMAGE} area damage`,
+    flashbang: `Blinds and deafens anyone facing it for up to ${UTIL.FLASH_MAX}s`,
+    molotov: `Burning fuel pool · ${UTIL.FIRE_DPS} dmg/s · slows`,
+    smoke: `Thick smoke screen for ${UTIL.SMOKE_DURATION}s`,
+    barricade: 'Free every life · Left click to place, right click to pick up · Climb it, then boot-stomp enemies from above',
+    he: `Fragmentation · up to ${UTIL.HE_DAMAGE} area damage`,
   };
   for (const w of Object.values(WEAPONS)) {
     if (w.slot === 'bomb' || w.slot === 'special') continue;
     const div = document.createElement('div');
     div.className = 'arsenal-item';
     const stats = w.damage
-      ? `${w.cls} · ${w.damage.head}/${w.damage.body}/${w.damage.leg} dmg (head/body/leg) · ${w.rpm} RPM${w.mag ? ` · ${w.mag} rds` : ''}${w.team !== 'any' ? ` · ${w.team === 'T' ? 'Bulls only' : 'Guard only'}` : ''}`
+      ? `${w.cls} · ${w.damage.head}/${w.damage.body}/${w.damage.leg} dmg (head/body/leg) · ${w.rpm} RPM${w.mag ? ` · ${w.mag} rds` : ''}${w.team !== 'any' ? ` · ${TEAMS[w.team].name} only` : ''}`
       : util[w.id];
     div.innerHTML = `<b>${w.name}</b><span class="price">${w.price ? `$${w.price}` : 'Default'}</span><span class="stats">${stats}</span>`;
     list.appendChild(div);
@@ -215,11 +235,12 @@ function updateInvite(w) {
 
 async function joinGame({ action, room, mode: joinMode = mode }) {
   audio.init();
-  const name = $('nameInput').value.trim() || `Calf${Math.floor(Math.random() * 900 + 100)}`;
+  const name = $('nameInput').value.trim() || `Recruit${Math.floor(Math.random() * 900 + 100)}`;
   try { localStorage.setItem('csmoo.name', name); } catch { /* storage unavailable */ }
   $('menuError').textContent = '';
   $('loading').hidden = false;
   try {
+    await assetsReady; // soldiers and weapon rigs are built synchronously once the match starts
     const welcome = await game.join({ room, name, team, mode: joinMode, action });
     if (welcome.mode !== mode) selectMode(welcome.mode, { preview: false });
     $('menu').hidden = true;
@@ -262,8 +283,9 @@ function enterObbyScreen() {
   $('menuError').textContent = '';
 }
 
-function startOfficialObby() {
+async function startOfficialObby() {
   audio.init();
+  await assetsReady;
   enterObbyScreen();
   game.startObby();
   $('clickToPlay').hidden = false;
@@ -272,13 +294,14 @@ function startOfficialObby() {
 async function fetchObby(code) {
   const r = await fetch(`/api/obbies/${encodeURIComponent(String(code).trim().toLowerCase())}`);
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || 'Obby not found');
+  if (!r.ok) throw new Error(data.error || 'Course not found');
   return data;
 }
 
 async function playCustomObby(code) {
-  if (!String(code || '').trim()) { $('menuError').textContent = 'Enter an obby code first'; return; }
+  if (!String(code || '').trim()) { $('menuError').textContent = 'Enter a course code first'; return; }
   audio.init();
+  await assetsReady;
   $('menuError').textContent = '';
   try {
     const def = await fetchObby(code);
@@ -292,6 +315,7 @@ async function playCustomObby(code) {
 
 async function openEditor(code = null) {
   audio.init();
+  await assetsReady;
   $('menuError').textContent = '';
   let def = null;
   if (code) {
@@ -322,7 +346,7 @@ function renderObbyBoard(el, rows) {
 function renderMyObbies() {
   const el = $('myObbyList');
   const list = myObbies();
-  el.innerHTML = list.length ? '' : '<div class="ol-empty">Obbies you publish show up here</div>';
+  el.innerHTML = list.length ? '' : '<div class="ol-empty">Courses you publish show up here</div>';
   for (const o of list) {
     const row = document.createElement('div');
     row.className = 'ol-row';
@@ -356,7 +380,7 @@ async function updateObbyBest() {
   try {
     const list = await (await fetch('/api/obbies')).json();
     const el = $('communityList');
-    el.innerHTML = list.length ? '' : '<div class="ol-empty">No community obbies yet — build the first one!</div>';
+    el.innerHTML = list.length ? '' : '<div class="ol-empty">No community courses yet — build the first one!</div>';
     for (const o of list) {
       const row = document.createElement('button');
       row.className = 'ol-row clickable';

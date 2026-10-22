@@ -1,4 +1,4 @@
-// Particles, milk tracers, decals, smoke clouds, fondue fires, slick puddles and explosions.
+// Particles, tracers, bullet holes, blood, smoke clouds, fire pools and explosions.
 import * as THREE from 'three';
 import { spriteTexture, smokePuffTexture, splatTexture } from './textures.js';
 import { UTIL } from '/shared/constants.js';
@@ -113,6 +113,29 @@ class Particles {
 const rand = (a, b) => a + Math.random() * (b - a);
 const v3 = (a) => (Array.isArray(a) ? a : [a.x, a.y, a.z]);
 
+/** Bullet hole: dark core, scorched ring, spalled chips. */
+function bulletHoleTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  g.addColorStop(0, 'rgba(8,7,6,1)');
+  g.addColorStop(0.18, 'rgba(14,12,10,0.95)');
+  g.addColorStop(0.42, 'rgba(40,36,32,0.55)');
+  g.addColorStop(1, 'rgba(40,36,32,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.strokeStyle = 'rgba(20,18,16,0.6)';
+  for (let i = 0; i < 7; i++) {
+    const a = Math.random() * Math.PI * 2;
+    ctx.lineWidth = 1 + Math.random();
+    ctx.beginPath(); ctx.moveTo(32 + Math.cos(a) * 6, 32 + Math.sin(a) * 6); ctx.lineTo(32 + Math.cos(a) * (12 + Math.random() * 10), 32 + Math.sin(a) * (12 + Math.random() * 10)); ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export class Effects {
   constructor(scene) {
     this.scene = scene;
@@ -139,7 +162,7 @@ export class Effects {
     tracerGeo.rotateX(Math.PI / 2);
     this.tracers = [];
     for (let i = 0; i < 80; i++) {
-      const m = new THREE.Mesh(tracerGeo, new THREE.MeshBasicMaterial({ color: 0xfffdf2, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const m = new THREE.Mesh(tracerGeo, new THREE.MeshBasicMaterial({ color: 0xffc46a, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
       m.visible = false;
       m.frustumCulled = false;
       scene.add(m);
@@ -149,10 +172,10 @@ export class Effects {
 
     // decals
     this.decalGeo = new THREE.PlaneGeometry(1, 1);
-    this.decalTex = { milk: splatTexture('250,250,245'), pink: splatTexture('240,140,170'), scorch: splatTexture('25,20,15') };
+    this.decalTex = { hole: bulletHoleTexture(), blood: splatTexture('92,10,8'), scorch: splatTexture('25,20,15') };
     this.decals = [];
     for (let i = 0; i < 160; i++) {
-      const mat = new THREE.MeshStandardMaterial({ map: this.decalTex.milk, transparent: true, depthWrite: false, roughness: 0.3, polygonOffset: true, polygonOffsetFactor: -4 });
+      const mat = new THREE.MeshStandardMaterial({ map: this.decalTex.hole, transparent: true, depthWrite: false, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -4 });
       const m = new THREE.Mesh(this.decalGeo, mat);
       m.visible = false;
       scene.add(m);
@@ -178,8 +201,8 @@ export class Effects {
       ctx.fillStyle = `rgba(255,240,150,${Math.random() * 0.6})`;
       ctx.beginPath(); ctx.arc(20 + Math.random() * 88, 20 + Math.random() * 88, 3 + Math.random() * 8, 0, 7); ctx.fill();
     }
-    this.fondueTex = new THREE.CanvasTexture(fc);
-    this.fondueTex.colorSpace = THREE.SRGBColorSpace;
+    this.fireTex = new THREE.CanvasTexture(fc);
+    this.fireTex.colorSpace = THREE.SRGBColorSpace;
   }
 
   setViewport(heightPx, fovDeg) {
@@ -227,15 +250,18 @@ export class Effects {
   impact(pos, normal, colorHex = 0x999999) {
     const p = v3(pos), n = v3(normal);
     for (let i = 0; i < 9; i++) {
-      this.normal.emit(p, [n[0] * rand(1, 4) + rand(-2, 2), n[1] * rand(1, 4) + rand(0, 3), n[2] * rand(1, 4) + rand(-2, 2)], { life: rand(0.3, 0.7), size: rand(0.03, 0.07), size1: 0.02, color: 0xfdfdf8, gravity: 12 });
+      this.normal.emit(p, [n[0] * rand(1, 4) + rand(-2, 2), n[1] * rand(1, 4) + rand(0, 3), n[2] * rand(1, 4) + rand(-2, 2)], { life: rand(0.3, 0.7), size: rand(0.03, 0.07), size1: 0.02, color: colorHex, gravity: 12 });
+    }
+    for (let i = 0; i < 4; i++) {
+      this.additive.emit(p, [n[0] * rand(2, 6) + rand(-3, 3), n[1] * rand(2, 6) + rand(0, 3), n[2] * rand(2, 6) + rand(-3, 3)], { life: rand(0.06, 0.16), size: 0.04, size1: 0.01, color: 0xffc070, gravity: 8 });
     }
     for (let i = 0; i < 3; i++) {
       this.normal.emit([p[0] + n[0] * 0.05, p[1] + n[1] * 0.05, p[2] + n[2] * 0.05], [n[0] * rand(0.3, 1) + rand(-0.3, 0.3), rand(0.2, 0.8), n[2] * rand(0.3, 1) + rand(-0.3, 0.3)], { life: rand(0.5, 1), size: 0.2, size1: 0.7, color: colorHex, alpha: 0.45, drag: 2 });
     }
-    this.decal(p, n, 'milk', rand(0.18, 0.3));
+    this.decal(p, n, 'hole', rand(0.09, 0.14), 20);
   }
 
-  decal(pos, normal, type = 'milk', size = 0.25, life = 14) {
+  decal(pos, normal, type = 'hole', size = 0.12, life = 14) {
     const d = this.decals[this.decalCursor];
     this.decalCursor = (this.decalCursor + 1) % this.decals.length;
     const p = v3(pos), n = new THREE.Vector3(...v3(normal));
@@ -254,9 +280,9 @@ export class Effects {
   bloodSplat(pos, dir) {
     const p = v3(pos), d = v3(dir);
     for (let i = 0; i < 14; i++) {
-      this.normal.emit(p, [d[0] * rand(1, 5) + rand(-2, 2), rand(-0.5, 3), d[2] * rand(1, 5) + rand(-2, 2)], { life: rand(0.4, 0.8), size: rand(0.05, 0.1), size1: 0.03, color: 0xf07fa5, gravity: 11 });
+      this.normal.emit(p, [d[0] * rand(1, 5) + rand(-2, 2), rand(-0.5, 3), d[2] * rand(1, 5) + rand(-2, 2)], { life: rand(0.4, 0.8), size: rand(0.04, 0.08), size1: 0.02, color: 0x6a0c08, gravity: 11 });
     }
-    this.normal.emit(p, [0, 0.3, 0], { life: 0.35, size: 0.3, size1: 0.6, color: 0xf6a5c0, alpha: 0.7, drag: 3 });
+    this.normal.emit(p, [0, 0.3, 0], { life: 0.3, size: 0.25, size1: 0.55, color: 0x8a1410, alpha: 0.55, drag: 3 });
   }
 
   explosion(pos) {
@@ -289,7 +315,7 @@ export class Effects {
     const p = v3(pos);
     const R = UTIL.SMOKE_RADIUS;
     const entry = { id, x: p[0], y: p[1], z: p[2], born: this.time, until: this.time + duration, idx: [] };
-    const colors = [0x9fb48c, 0x8ea37d, 0xb0c29c, 0x7f9170];
+    const colors = [0xc9cbcc, 0xb8babc, 0xd6d7d8, 0xa9abad];
     const count = 44;
     for (let i = 0; i < count; i++) {
       const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2;
@@ -302,13 +328,13 @@ export class Effects {
     }
     this.smokes.set(id, entry);
     for (let i = 0; i < 24; i++) {
-      this.normal.emit([p[0], p[1] + 0.2, p[2]], [rand(-6, 6), rand(0, 4), rand(-6, 6)], { life: 0.8, size: 0.8, size1: 2, color: 0xc8d8b0, alpha: 0.5, drag: 3 });
+      this.normal.emit([p[0], p[1] + 0.2, p[2]], [rand(-6, 6), rand(0, 4), rand(-6, 6)], { life: 0.8, size: 0.8, size1: 2, color: 0xd0d2d4, alpha: 0.5, drag: 3 });
     }
   }
 
   fire(id, pos, duration = UTIL.FIRE_DURATION) {
     const p = v3(pos);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(UTIL.FIRE_RADIUS, 32), new THREE.MeshBasicMaterial({ map: this.fondueTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(UTIL.FIRE_RADIUS, 32), new THREE.MeshBasicMaterial({ map: this.fireTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
     disc.rotation.x = -Math.PI / 2;
     disc.position.set(p[0], p[1] + 0.03, p[2]);
     disc.scale.setScalar(0.1);
@@ -354,12 +380,12 @@ export class Effects {
     const p = v3(pos);
     for (let i = 0; i < 3; i++) this.explosion([p[0] + rand(-2, 2), p[1] + rand(0, 2), p[2] + rand(-2, 2)]);
     for (let i = 0; i < 120; i++) {
-      this.normal.emit([p[0], p[1] + 1, p[2]], [rand(-18, 18), rand(4, 26), rand(-18, 18)], { life: rand(1, 2.2), size: rand(0.15, 0.35), size1: 0.1, color: 0xf6f3d8, gravity: 16 });
+      this.normal.emit([p[0], p[1] + 1, p[2]], [rand(-18, 18), rand(4, 26), rand(-18, 18)], { life: rand(1, 2.2), size: rand(0.15, 0.35), size1: 0.1, color: 0x4a3b2c, gravity: 16 });
     }
     for (let i = 0; i < 40; i++) {
-      this.normal.emit([p[0] + rand(-3, 3), p[1] + rand(0, 6), p[2] + rand(-3, 3)], [rand(-3, 3), rand(3, 9), rand(-3, 3)], { life: rand(2.5, 4.5), size: 3, size1: 10, color: 0x9daa8a, alpha: 0.6, drag: 0.8 });
+      this.normal.emit([p[0] + rand(-3, 3), p[1] + rand(0, 6), p[2] + rand(-3, 3)], [rand(-3, 3), rand(3, 9), rand(-3, 3)], { life: rand(2.5, 4.5), size: 3, size1: 10, color: 0x2e2c2a, alpha: 0.6, drag: 0.8 });
     }
-    this.ring(p, 0xe8ffd0, 26, 0.9);
+    this.ring(p, 0xffd9a8, 26, 0.9);
     this.flashLight([p[0], p[1] + 3, p[2]], 0xffe0a0, 200, 1.0, 60);
   }
 

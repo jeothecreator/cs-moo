@@ -1,22 +1,22 @@
 // Obby creator block catalogue + validation, shared by the browser editor and the server API.
 
 export const OBBY_BLOCKS = [
-  { id: 0, name: 'Grass', key: '1', color: '#6fae3f' },
+  { id: 0, name: 'Turf', key: '1', color: '#6fae3f' },
   { id: 1, name: 'Crate', key: '2', color: '#b58a4f' },
-  { id: 2, name: 'Hay', key: '3', color: '#e0c060' },
+  { id: 2, name: 'Sandbags', key: '3', color: '#e0c060' },
   { id: 3, name: 'Wood', key: '4', color: '#9c7a52' },
-  { id: 4, name: 'Milk tank', key: '5', color: '#cfd8de' },
-  { id: 5, name: 'Cheese · collapses', key: '6', color: '#f5c542' },
-  { id: 6, name: 'Sour milk · resets', key: '7', color: '#86e05a' },
+  { id: 4, name: 'Steel tank', key: '5', color: '#cfd8de' },
+  { id: 5, name: 'Rotten planks · collapse', key: '6', color: '#f5c542' },
+  { id: 6, name: 'Toxic sludge · resets', key: '7', color: '#86e05a' },
   { id: 7, name: 'Bounce pad', key: '8', color: '#f29bb5' },
-  { id: 8, name: 'Butter · slippery', key: '9', color: '#f7e7a0' },
+  { id: 8, name: 'Ice · slippery', key: '9', color: '#f7e7a0' },
   { id: 9, name: 'Checkpoint', key: '0', color: '#e8e2d4' },
   { id: 10, name: 'Start', key: '-', color: '#5d9cec' },
   { id: 11, name: 'Finish', key: '=', color: '#f2c14e' },
 ];
 
 export const BLOCK = {
-  GRASS: 0, CRATE: 1, HAY: 2, WOOD: 3, TANK: 4, CHEESE: 5, SOUR: 6, PAD: 7, BUTTER: 8, CHECK: 9, START: 10, FINISH: 11,
+  TURF: 0, CRATE: 1, SANDBAG: 2, WOOD: 3, TANK: 4, ROTTEN: 5, TOXIC: 6, PAD: 7, ICE: 8, CHECK: 9, START: 10, FINISH: 11,
 };
 
 export const OBBY_LIMITS = { MAX_BLOCKS: 3000, XZ: 60, Y: 40, NAME: 32 };

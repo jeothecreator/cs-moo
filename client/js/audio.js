@@ -1,13 +1,14 @@
 // Fully procedural WebAudio sound design with simple positional panning.
 
+// Layers per weapon: transient crack, muzzle body, low thump, the action cycling, outdoor echo tail.
 const SHOTS = {
-  ak: { body: [900, 0.24, 1.0], crack: 0.55, thump: [120, 40, 0.16, 1.0], squirt: 0.35 },
-  mooster: { body: [1800, 0.1, 0.45], crack: 0.12, thump: [90, 50, 0.08, 0.35], squirt: 0.25 },
-  milkyway: { body: [1400, 0.11, 0.6], crack: 0.3, thump: [150, 60, 0.08, 0.5], squirt: 0.3 },
-  udder9: { body: [1600, 0.13, 0.7], crack: 0.4, thump: [170, 70, 0.1, 0.6], squirt: 0.3 },
-  deag: { body: [700, 0.32, 1.1], crack: 0.7, thump: [95, 35, 0.26, 1.2], squirt: 0.35 },
-  pasteurizer: { body: [1100, 0.38, 1.2], crack: 0.4, thump: [75, 30, 0.3, 1.3], squirt: 0.5, lowpass: true },
-  creaminator: { body: [600, 0.6, 1.3], crack: 0.9, thump: [60, 25, 0.45, 1.4], squirt: 0.4, reverb: 0.5 },
+  scar: { body: [800, 0.26, 1.1], crack: 0.75, thump: [110, 38, 0.18, 1.1], mech: 0.18, tail: [500, 0.9, 0.35] },
+  m4s: { body: [1500, 0.09, 0.4], crack: 0.08, thump: [90, 50, 0.07, 0.3], mech: 0.3, tail: [900, 0.3, 0.08] },
+  carbine: { body: [1100, 0.18, 0.85], crack: 0.6, thump: [130, 45, 0.12, 0.8], mech: 0.16, tail: [600, 0.7, 0.28] },
+  p9: { body: [1300, 0.14, 0.75], crack: 0.55, thump: [160, 60, 0.1, 0.6], mech: 0.2, tail: [700, 0.5, 0.18] },
+  magnum: { body: [650, 0.3, 1.2], crack: 0.9, thump: [90, 32, 0.24, 1.25], mech: 0.12, tail: [450, 1.0, 0.4] },
+  shotgun: { body: [900, 0.36, 1.3], crack: 0.6, thump: [70, 28, 0.3, 1.4], mech: 0.1, tail: [380, 1.1, 0.45], lowpass: true },
+  sniper: { body: [550, 0.5, 1.4], crack: 1.0, thump: [58, 24, 0.45, 1.5], mech: 0.1, tail: [320, 1.6, 0.55], reverb: 0.5 },
 };
 
 export class AudioEngine {
@@ -128,13 +129,14 @@ export class AudioEngine {
 
   shot(weapon, pos = null) {
     if (!this.ok) return;
-    const p = SHOTS[weapon] || SHOTS.udder9;
+    const p = SHOTS[weapon] || SHOTS.p9;
     const t = this.ctx.currentTime;
-    const o = this.out(pos, { range: 22, reverb: p.reverb ?? 0.2 });
-    this.noise(o, t, p.body[1], { type: p.lowpass ? 'lowpass' : 'bandpass', freq: p.body[0], freqEnd: p.body[0] * 0.5, Q: 0.7, gain: p.body[2] });
-    if (p.crack) this.noise(o, t, 0.05, { type: 'highpass', freq: 3000, gain: p.crack });
+    const o = this.out(pos, { range: 26, reverb: p.reverb ?? 0.28 });
+    this.noise(o, t, 0.035, { type: 'highpass', freq: 2500, gain: p.crack, attack: 0.0005 });
+    this.noise(o, t, p.body[1], { type: p.lowpass ? 'lowpass' : 'bandpass', freq: p.body[0], freqEnd: p.body[0] * 0.4, Q: 0.6, gain: p.body[2], attack: 0.001 });
     this.tone(o, t, p.thump[2], { freq: p.thump[0], freqEnd: p.thump[1], gain: p.thump[3] });
-    this.noise(o, t + 0.01, 0.12, { type: 'bandpass', freq: 2600, freqEnd: 500, Q: 2, gain: p.squirt });
+    this.noise(o, t + 0.035, 0.025, { type: 'bandpass', freq: 4200, Q: 3, gain: p.mech });
+    this.noise(o, t + 0.02, p.tail[1], { type: 'lowpass', freq: p.tail[0], freqEnd: p.tail[0] * 0.5, Q: 0.4, gain: p.tail[2], attack: 0.02 });
   }
 
   dryFire() {
@@ -233,7 +235,7 @@ export class AudioEngine {
     this.noise(o, t, 0.1, { type: 'lowpass', freq: 800, gain: 0.35 });
   }
 
-  // Soft milk-splat / thud. The old sawtooth moo stacked on every FFA kill.
+  // Soft body-fall thud on a kill.
   death(pos = null, local = false) {
     if (!this.ok) return;
     const t = this.ctx.currentTime;
@@ -244,24 +246,12 @@ export class AudioEngine {
     this.noise(o, t + 0.02, 0.12, { type: 'bandpass', freq: 900, freqEnd: 280, Q: 1.1, gain: g * 0.45 });
   }
 
-  moo(pos, pitch = 1) {
+  /** Falling into the water on the assault course. */
+  splash(pos = null) {
     if (!this.ok) return;
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
-    const o = this.out(pos, { range: 10, reverb: 0.18 });
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    const base = (165 + Math.random() * 18) * pitch;
-    osc.frequency.setValueAtTime(base * 1.05, t);
-    osc.frequency.linearRampToValueAtTime(base * 0.82, t + 0.35);
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0.0001, t);
-    env.gain.exponentialRampToValueAtTime(0.12, t + 0.05);
-    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-    osc.connect(lp).connect(env).connect(o);
-    osc.start(t);
-    osc.stop(t + 0.5);
+    const t = this.ctx.currentTime, o = this.out(pos, { range: 10, reverb: 0.2 });
+    this.noise(o, t, 0.5, { type: 'lowpass', freq: 2400, freqEnd: 300, Q: 0.5, gain: 0.35, attack: 0.01 });
+    this.noise(o, t + 0.05, 0.3, { type: 'bandpass', freq: 900, freqEnd: 400, Q: 1, gain: 0.15 });
   }
 
   swing(pos) {
@@ -284,7 +274,7 @@ export class AudioEngine {
       this.noise(o, t, 1.3, { type: 'lowpass', freq: 1400, freqEnd: 120, gain: 1.6 });
       this.tone(o, t, 0.7, { freq: 70, freqEnd: 28, gain: 1.4 });
       this.noise(o, t, 0.08, { type: 'highpass', freq: 2500, gain: 0.8 });
-    } else if (type === 'butter') {
+    } else if (type === 'flashbang') {
       this.noise(o, t, 0.3, { type: 'highpass', freq: 1800, gain: 1.1 });
       this.tone(o, t, 0.08, { type: 'square', freq: 1500, gain: 0.3 });
     } else if (type === 'smoke') {

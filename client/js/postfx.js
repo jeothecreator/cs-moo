@@ -77,8 +77,70 @@ const GradeShader = {
     }`,
 };
 
+// GTAO discards sky pixels (depth = 1), leaving stale values in its AO buffer that the Default
+// blend multiplies into the frame. Invisible after tone mapping, but bloom smears them into a
+// screen-wide glare — so scrub NaN/Inf and cap HDR before anything reaches the bloom pass.
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null }, maxValue: { value: 16 } },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float maxValue;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c.rgb)) || any(isinf(c.rgb))) c.rgb = vec3(0.0);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, maxValue), c.a);
+    }`,
+};
+
+// Bodycam: a wide-angle lens (barrel distortion — the centre, and so the crosshair, is untouched),
+// edge colour fringing, sensor noise, slight desaturation and a heavy vignette.
+const BodycamShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    resolution: { value: new THREE.Vector2(1, 1) },
+    time: { value: 0 },
+    distortion: { value: 0.32 },
+    aberration: { value: 0.012 },
+    noise: { value: 0.055 },
+    desat: { value: 0.16 },
+    vignette: { value: 0.62 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    uniform float time, distortion, aberration, noise, desat, vignette;
+    varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main() {
+      vec2 c = vUv - 0.5;
+      c.x *= resolution.x / resolution.y;
+      float r2 = dot(c, c);
+      vec2 d = (vUv - 0.5) * (1.0 + distortion * r2) / (1.0 + distortion * 0.3);
+      vec2 uv = 0.5 + d;
+      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+      float r = length(d);
+      vec2 dir = d * aberration * r;
+      vec3 col = vec3(texture2D(tDiffuse, uv + dir).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - dir).b);
+      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(col, vec3(l), desat) * vec3(1.03, 1.0, 0.95);
+      col = (col - 0.5) * 1.1 + 0.5;
+      // sensor noise: luminance grain plus faint horizontal readout banding
+      float n = hash(floor(vUv * resolution) + fract(time * 7.13) * 91.0) - 0.5;
+      col += n * noise + (hash(vec2(floor(vUv.y * resolution.y * 0.25), fract(time))) - 0.5) * noise * 0.25;
+      col *= 1.0 - vignette * smoothstep(0.18, 0.62, r);
+      gl_FragColor = vec4(max(col, 0.0), 1.0);
+    }`,
+};
+
 export class PostFX {
-  constructor(renderer, scene, camera, quality = 'high') {
+  constructor(renderer, scene, camera, quality = 'high', style = 'bodycam') {
     this.renderer = renderer;
     this.enabled = true;
     this.quality = QUALITY[quality] ? quality : 'high';
@@ -96,6 +158,8 @@ export class PostFX {
     this.ao.output = GTAOPass.OUTPUT.Default;
     this.ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 0.4, scale: 1.1, samples: 16, screenSpaceRadius: false });
     composer.addPass(this.ao);
+    this.sanitize = new ShaderPass(SanitizeShader);
+    composer.addPass(this.sanitize);
 
     // Viewmodel draws after AO so the gun never self-occludes, but before bloom so muzzle flash glows.
     this.vmPass = new RenderPass(scene, camera);
@@ -115,7 +179,11 @@ export class PostFX {
     this.grade = new ShaderPass(GradeShader);
     composer.addPass(this.grade);
 
+    this.bodycam = new ShaderPass(BodycamShader);
+    composer.addPass(this.bodycam);
+
     this.setQuality(this.quality);
+    this.setStyle(style);
   }
 
   setQuality(name) {
@@ -130,6 +198,21 @@ export class PostFX {
     this.resize();
   }
 
+  /** 'bodycam' (default) or 'tactical' — the clean CS look. */
+  setStyle(style) {
+    this.style = style === 'tactical' ? 'tactical' : 'bodycam';
+    this.bodycam.enabled = this.style === 'bodycam' && this.lens !== false;
+    this.grade.uniforms.vignette.value = this.bodycam.enabled ? 0.12 : 0.34;
+    this.grade.uniforms.grain.value = this.bodycam.enabled ? 0.0 : 0.035;
+  }
+
+  /** The bodycam lens belongs to first-person play; third-person modes (course, editor, menu) skip it. */
+  setLens(on) {
+    if (this.lens === on) return;
+    this.lens = on;
+    this.setStyle(this.style);
+  }
+
   resize() {
     const size = this.renderer.getSize(new THREE.Vector2());
     const pr = this.renderer.getPixelRatio();
@@ -139,6 +222,7 @@ export class PostFX {
     const s = QUALITY[this.quality].aoScale;
     this.ao.setSize(Math.max(1, Math.round(size.x * s)), Math.max(1, Math.round(size.y * s)));
     this.grade.uniforms.texelSize.value.set(1 / Math.max(1, size.x * pr), 1 / Math.max(1, size.y * pr));
+    this.bodycam.uniforms.resolution.value.set(size.x * pr, size.y * pr);
   }
 
   // Point the chain at a scene and draw. `vm` is the optional first-person viewmodel layer.
@@ -155,6 +239,7 @@ export class PostFX {
       this.vmPass.enabled = false;
     }
     this.grade.uniforms.time.value += dt;
+    this.bodycam.uniforms.time.value += dt;
     this.composer.render(dt);
   }
 

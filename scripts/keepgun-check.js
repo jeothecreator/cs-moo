@@ -14,13 +14,13 @@ for (const mode of ['defusal', 'ffa', 'duel']) {
   p.money = 16000;
   m.spawn(p, true);
   ok(m.buy(p, gun), `${mode}: bought ${gun}`);
-  ok(m.buy(p, 'deag'), `${mode}: bought deag`);
+  ok(m.buy(p, 'magnum'), `${mode}: bought magnum`);
   p.alive = false; p.survived = false;
   if (mode === 'defusal') m.startRound(); else m.spawn(p, true);
-  ok(p.weapons.primary === gun && p.weapons.secondary === 'deag', `${mode}: kept ${gun} + deag after dying (${p.weapons.primary}, ${p.weapons.secondary})`);
+  ok(p.weapons.primary === gun && p.weapons.secondary === 'magnum', `${mode}: kept ${gun} + magnum after dying (${p.weapons.primary}, ${p.weapons.secondary})`);
   if (mode === 'defusal') { m.halftime(); p.alive = false; p.survived = false; m.startRound(); }
   else m.startMatch();
-  ok(p.weapons.primary === DEFAULT_PRIMARY && p.weapons.secondary === 'udder9', `${mode}: reset to defaults after ${mode === 'defusal' ? 'halftime' : 'new match'}`);
+  ok(p.weapons.primary === DEFAULT_PRIMARY && p.weapons.secondary === 'p9', `${mode}: reset to defaults after ${mode === 'defusal' ? 'halftime' : 'new match'}`);
   m.destroy();
 }
 process.exit(fail ? 1 : 0);

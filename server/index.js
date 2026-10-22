@@ -34,7 +34,7 @@ function randomCode(len, taken) {
   }
 }
 
-function cleanName(name, max = 16, fallback = 'Calf') {
+function cleanName(name, max = 16, fallback = 'Recruit') {
   return String(name || '').replace(/[<>&"'`]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) || fallback;
 }
 
@@ -179,7 +179,7 @@ app.get('/api/obbies', (_req, res) => {
 
 app.get('/api/obbies/:code', (req, res) => {
   const o = obbies.data.obbies[sanitizeRoom(req.params.code)];
-  if (!o) return res.status(404).json({ error: 'Obby not found — check the code' });
+  if (!o) return res.status(404).json({ error: 'Course not found — check the code' });
   res.json({ code: o.code, name: o.name, author: o.author, blocks: o.blocks, plays: o.plays || 0, scores: o.scores || [] });
 });
 
@@ -188,7 +188,7 @@ app.post('/api/obbies', express.json({ limit: '600kb' }), (req, res) => {
   if (limited(req, 20)) return res.status(429).json({ error: 'Saving too often — wait a moment' });
   const check = validateObbyBlocks(req.body?.blocks);
   if (!check.ok) return res.status(400).json({ error: check.error });
-  const name = cleanName(req.body?.name, OBBY_LIMITS.NAME, 'Untitled obby');
+  const name = cleanName(req.body?.name, OBBY_LIMITS.NAME, 'Untitled course');
   const author = cleanName(req.body?.author);
   const code = sanitizeRoom(req.body?.code);
   const existing = code ? obbies.data.obbies[code] : null;
@@ -208,7 +208,7 @@ app.post('/api/obbies', express.json({ limit: '600kb' }), (req, res) => {
 
 app.post('/api/obbies/:code/play', (req, res) => {
   const o = obbies.data.obbies[sanitizeRoom(req.params.code)];
-  if (!o) return res.status(404).json({ error: 'Obby not found' });
+  if (!o) return res.status(404).json({ error: 'Course not found' });
   if (!limited(req, 60)) {
     o.plays = (o.plays || 0) + 1;
     obbies.save();
@@ -218,7 +218,7 @@ app.post('/api/obbies/:code/play', (req, res) => {
 
 app.post('/api/obbies/:code/score', express.json({ limit: '4kb' }), (req, res) => {
   const o = obbies.data.obbies[sanitizeRoom(req.params.code)];
-  if (!o) return res.status(404).json({ error: 'Obby not found' });
+  if (!o) return res.status(404).json({ error: 'Course not found' });
   if (limited(req, 30)) return res.status(429).json({ error: 'slow down' });
   const time = Number(req.body?.time);
   if (!Number.isFinite(time) || time < 1 || time > 7200) return res.status(400).json({ error: 'invalid time' });
@@ -278,6 +278,6 @@ setInterval(() => {
 }, 10_000);
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`CS:Moo server running → http://localhost:${PORT}`);
+  console.log(`FRONTLINE server running → http://localhost:${PORT}`);
   for (const ip of lanAddresses()) console.log(`  Friends on your network: http://${ip}:${PORT}`);
 });

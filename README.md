@@ -1,7 +1,7 @@
-# CS:Moo — Counter-Strike: Bovine Operations
+# FRONTLINE — Tactical Operations
 
-A browser-based 5v5 tactical shooter. Rogue Bulls attack, Dairy Guard defend, milk flies.
-No installs, no downloaded assets: every texture, model and sound is generated procedurally at load.
+A browser-based tactical shooter in the Counter-Strike mould: 5v5 defusal, free-for-all, 1v1 duels and a solo assault course.
+Insurgents attack, the Task Force defends. Rendered with a bodycam look by default (switchable to a clean "tactical" style).
 
 ## Run it
 
@@ -10,61 +10,64 @@ npm install
 npm start
 ```
 
-Open http://localhost:3000, pick a callsign and room, and hit **Find match**.
+Open http://localhost:3000, pick a callsign and hit **Quick play**.
 Friends on your network can join the same room at `http://<your-ip>:3000/?room=<name>`.
 Empty slots are filled with bots, so you can play solo right away.
 
 `PORT=8080 npm start` changes the port; `BUY_TIME=5 npm start` shortens the buy phase for testing.
 
+## Maps
+
+| Mode | Map | Setting |
+| --- | --- | --- |
+| Defusal | `de_trenches` | An overcast front line: plank-revetted earthworks, sandbag parapets, barbed wire, mud and duckboards, concrete bunkers at both bomb sites |
+| Free-for-all | `dm_seoul` | A Seoul street block at dusk: storefronts with Hangul neon, apartment towers, delivery trucks, vending machines, overhead wires |
+| 1v1 Duel | `aim_rooftop` | A green-coated Seoul rooftop at golden hour: water tanks, AC units, onggi jars, a chain-link safety fence above the city |
+| Assault Course | — | Solo obstacle course over open water, plus a course creator with share codes |
+
 ## What's in the game
 
-- **Match flow**: buy phase → 1:45 action phase → round end; first to 8 rounds, sides swap after round 7 (MR15).
-- **Free-for-all**: a separate Creamery arena with free loadouts, 12-second post-spawn loadout changes, protected anti-camp spawns, 3-second respawns, and a first-to-30 leaderboard.
-- **Economy (Gallons $)**: $800 start, per-weapon kill rewards (rifle $300, SMG $600, shotgun $900, hoof $1,500), $3,250 win, loss bonus $1,400 +$500/streak (cap $3,400), +$800 for Bulls when the bomb was planted.
-- **Arsenal**: Udder-Nine, Deag-Bull, Milky Way, Pasteurizer (8 pellets), AK-Moory (1-tap HS through Kevlar), Mooster-4A1 (suppressed), The Creaminator (2-level scope, leaves slippery milk puddles), Hoof knife with backstabs.
-- **Combat**: per-weapon spray patterns you can control, movement/jump/crouch inaccuracy, head/body/leg hitboxes, armor & helmets with per-weapon armor penetration, range falloff, wallbangs through wood/hay/crates.
-- **Utility**: Butter Grenade (flash), Sour Milk Grenade (smoke that blocks vision and bot sight), He-Cheese (HE), Cheese Molotov (fondue fire, 40 dps, slows, extinguished by smoke).
-- **Objective**: plant the Sour Milk Bomb at A or B (3.2 s), 40 s fuse, defuse in 10 s or 5 s with a kit, drop and pick up the bomb.
-- **Movement**: Source-style acceleration and friction, air strafing, crouch-jumping, walking to stay silent.
-- **Bots**: buy logic, A/B/mid roles, rotations on enemy sightings, entry utility, plant/defuse, reaction time, aim error and burst control.
-- **HUD**: rotating radar with spotted enemies, kill feed (headshots, wallbangs), buy menu, scoreboard, round banners with MVP, damage direction indicators, dynamic crosshair, scope overlay, spectating, chat (all/team).
+- **Match flow**: buy phase → 1:45 action phase → round end; first to 8 rounds, sides swap at halftime.
+- **Free-for-all / duel**: kills earn money, bought guns stay with you, protected spawns, 3-second respawns.
+- **Economy**: $800 start, per-weapon kill rewards, win/loss bonuses, plant reward.
+- **Arsenal**: P9 Pistol, .50 Magnum, M4 Carbine, M870 Shotgun, SCAR-H (Insurgents), M4A1-S (Task Force), L96A1 Sniper, Combat Knife.
+- **Utility**: Flashbang, Smoke Grenade, HE Grenade, Molotov, Sandbag Barricades (climb them and boot-stomp from above).
+- **Combat**: per-weapon spray patterns, movement inaccuracy, head/body/leg hitboxes, armour penetration, range falloff, wallbangs through wood and crates, lag-compensated hit detection.
+- **First person**: real animated arm rigs — authored draw / fire / reload animations for rifles and pistols, with every other weapon mounted on the same rigs.
+- **Third person**: rigged operators with procedural walk / crouch / aim and two-bone IK keeping both hands on the weapon.
+- **Rendering**: physical sky with image-based lighting, ambient occlusion, bloom, SMAA, filmic grade, procedural PBR textures with derived normal maps, and the bodycam lens (barrel distortion, sensor noise, REC burn-in).
+- **Bots**: buy logic, roles, rotations, plants/defuses, reaction time and recoil control.
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
 | WASD / Space / Ctrl or C / Shift | Move / jump / crouch / walk |
-| Mouse 1 / Mouse 2 | Fire / scope, heavy hoof swing, underhand throw |
+| Mouse 1 / Mouse 2 | Fire / aim down sights |
 | R | Reload |
 | F | Inspect weapon |
-| 1–5, Q, wheel | Primary, pistol, hoof, grenades, bomb, last weapon |
+| 1–5, Q, wheel | Primary, pistol, knife, grenades, C4, last weapon |
+| 6 / X | Sandbag barricades |
 | B | Buy menu |
 | E | Plant / defuse |
-| G | Drop bomb |
 | Tab | Scoreboard |
-| Y / U | Chat / team chat (all chat in free-for-all) |
-| M | Change team (defusal only) |
-| Esc | Pause & settings |
+| Y / U | Chat / team chat |
+| Esc | Pause & settings (graphics quality, visual style) |
 
 ## Architecture
 
 ```
 shared/     constants (weapons, economy, recoil), map geometry, kinematic physics & raycasts — used by both sides
-server/     Node.js authoritative simulation @ 60 Hz, snapshots @ 30 Hz
-  index.js    Express static hosting + WebSocket rooms (/ws, /api/rooms)
-  match.js    rounds, economy, lag-compensated hit detection (1 s hitbox history rewind), grenades, bomb
-  bot.js      bot brains; nav.js — grid A* with string pulling
+server/     Node.js authoritative simulation @ 60 Hz, snapshots @ 30 Hz (match.js, bot.js, nav.js)
 client/     Three.js renderer + HTML/CSS HUD
-  game.js     input, client-side prediction, shooting, snapshot interpolation (100 ms), events
-  world.js    merged per-material geometry, baked (update-once) sun shadows, sky, skyline props
-  cow.js      animated cow operators; viewmodel.js — weapon meshes + first-person viewmodel
-  effects.js  GPU point particles, milk tracers, decals, smoke/fire/puddles
-  audio.js    procedural WebAudio SFX with stereo positioning
+  world.js     themed map builder: banded world-UV surfaces, per-theme sky/lighting/set dressing
+  assets.js    glTF loading, rig measurement, static gun baking
+  viewmodel.js first-person rigs + procedural weapons; soldier.js — third-person operators
+  postfx.js    AO, bloom, SMAA, grade and the bodycam lens
+  textures.js  procedural PBR textures (Korean signage uses Noto Sans KR)
 ```
 
-### How this differs from the design doc
+## Assets
 
-- **Networking** uses WebSockets (JSON) instead of Geckos.io/WebRTC, which avoids UDP/ICE server setup. The server still does the doc's lag compensation: it keeps a rolling hitbox history and rewinds to each client's render time to validate shots.
-- **Movement** is client-predicted and validated by the server (speed clamp, collision check, freeze-time lock) rather than fully server-authoritative.
-- **Rendering** uses Three.js with procedural low-poly art instead of Blender/Draco assets. The static sun shadow map is rendered once per round, standing in for baked lightmaps.
-- **Physics** uses custom AABB collision and raycasts rather than Rapier.
+3D models live in `client/assets/models/` — see `CREDITS.txt` there for sources and licences.
+They were converted from FBX/glTF and compressed (WebP textures, meshopt geometry) from ~200 MB of source files to ~9 MB.

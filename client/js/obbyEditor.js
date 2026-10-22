@@ -24,8 +24,8 @@ export function inviteLink(code) {
 
 function starterBlocks() {
   const blocks = [];
-  for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) blocks.push([x, 0, z, x === 0 && z === 0 ? BLOCK.START : BLOCK.GRASS]);
-  blocks.push([0, 0, -5, BLOCK.HAY], [0, 1, -8, BLOCK.CRATE], [1, 1, -11, BLOCK.CHEESE], [0, 1, -14, BLOCK.FINISH]);
+  for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) blocks.push([x, 0, z, x === 0 && z === 0 ? BLOCK.START : BLOCK.TURF]);
+  blocks.push([0, 0, -5, BLOCK.SANDBAG], [0, 1, -8, BLOCK.CRATE], [1, 1, -11, BLOCK.ROTTEN], [0, 1, -14, BLOCK.FINISH]);
   return blocks;
 }
 
@@ -80,7 +80,7 @@ export class ObbyEditor {
     const obby = this.game.obby;
     obby.ensureBase();
     if (obby.root) obby.root.visible = false;
-    obby.cow.root.visible = false;
+    obby.player.root.visible = false;
     this.scene = obby.scene;
     this.mats = obby;
     if (!this.group) this.buildScaffold();
@@ -120,7 +120,7 @@ export class ObbyEditor {
   resume() {
     const obby = this.game.obby;
     if (obby.root) obby.root.visible = false;
-    obby.cow.root.visible = false;
+    obby.player.root.visible = false;
     this.active = true;
     this.suspended = false;
     this.group.visible = true;
@@ -132,7 +132,7 @@ export class ObbyEditor {
     this.active = false;
     this.suspended = false;
     if (this.group) this.group.visible = false;
-    if (this.game.obby?.cow) this.game.obby.cow.root.visible = true;
+    if (this.game.obby?.player) this.game.obby.player.root.visible = true;
     this.el.hud.hidden = true;
     this.el.share.hidden = true;
   }

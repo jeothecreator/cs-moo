@@ -4,9 +4,8 @@ import { MAP, siteAt } from '../shared/map.js';
 import { eyeHeight, playerHeight, dirFromAngles } from '../shared/physics.js';
 
 export const BOT_NAMES = [
-  'Bessie', 'Sir Loin', 'Moo-nster', 'Mootilda', 'T-Bone', 'Angus', 'Moolan', 'Brisket', 'Clarabelle',
-  'Holy Cow', 'Moozart', 'Heifer Nothing', 'Cowabunga', 'Udderly', 'Bovinator', 'Cud Chewer', 'Milkshake',
-  'Moogan Freeman', 'Big Mac', 'Daisy', 'Buttercup', 'Sirloin Steve', 'Moo Lawn', 'Cheddar',
+  'Viper', 'Ghost', 'Reaper', 'Nomad', 'Havoc', 'Sarge', 'Blitz', 'Raven', 'Mako', 'Kilo', 'Hawk', 'Bishop',
+  'Dutch', 'Frost', 'Grizzly', 'Jester', 'Maverick', 'Ronin', 'Saber', 'Tank', 'Wolf', 'Zulu', 'Echo', 'Cobra',
 ];
 
 const TAU = Math.PI * 2;
@@ -84,27 +83,27 @@ export class BotBrain {
     const { m, p } = this;
     this.bought = true;
     if (m.ffa) {
-      const opts = ['milkyway', 'milkyway', 'milkyway', 'pasteurizer', 'udder9', 'ak', 'mooster'];
+      const opts = ['carbine', 'carbine', 'carbine', 'shotgun', 'p9', 'scar', 'm4s'];
       m.buy(p, opts[Math.floor(Math.random() * opts.length)]);
-      if (Math.random() < 0.18) m.buy(p, 'deag');
+      if (Math.random() < 0.18) m.buy(p, 'magnum');
       p.active = p.weapons.primary || p.weapons.secondary;
       return;
     }
     const want = [];
     const $ = () => p.money;
     if (!p.weapons.primary) {
-      if ($() >= 5750 && Math.random() < 0.15) want.push('creaminator');
-      else if (p.team === 'T' && $() >= 3350) want.push('ak');
-      else if (p.team === 'CT' && $() >= 3550) want.push('mooster');
-      else if ($() >= 2650 && Math.random() < 0.25) want.push('pasteurizer');
-      else if ($() >= 1700 && (m.round === 1 || Math.random() < 0.6)) want.push('milkyway');
+      if ($() >= 5750 && Math.random() < 0.15) want.push('sniper');
+      else if (p.team === 'T' && $() >= 3350) want.push('scar');
+      else if (p.team === 'CT' && $() >= 3550) want.push('m4s');
+      else if ($() >= 2650 && Math.random() < 0.25) want.push('shotgun');
+      else if ($() >= 1700 && (m.round === 1 || Math.random() < 0.6)) want.push('carbine');
     }
     for (const item of want) m.buy(p, item);
     if ($() >= 1000 && !(p.armor >= 100 && p.helmet)) m.buy(p, 'vesthelm');
     else if ($() >= 650 && p.armor < 100) m.buy(p, 'vest');
-    if (!p.weapons.primary && $() >= 700 && p.weapons.secondary !== 'deag' && Math.random() < 0.5) m.buy(p, 'deag');
+    if (!p.weapons.primary && $() >= 700 && p.weapons.secondary !== 'magnum' && Math.random() < 0.5) m.buy(p, 'magnum');
     if (p.team === 'CT' && $() >= 400 && Math.random() < 0.6) m.buy(p, 'kit');
-    const nades = ['smoke', 'butter', 'he', 'molotov'].sort(() => Math.random() - 0.5);
+    const nades = ['smoke', 'flashbang', 'he', 'molotov'].sort(() => Math.random() - 0.5);
     for (const g of nades) if ($() >= 600 && Math.random() < 0.5) m.buy(p, g);
     p.active = p.weapons.primary || p.weapons.secondary;
   }
@@ -153,15 +152,15 @@ export class BotBrain {
 
   ensureWeapon() {
     const { m, p } = this;
-    if (p.active === 'bomb' && !this.planting) m.switchWeapon(p, p.weapons.primary || p.weapons.secondary || 'hoof');
+    if (p.active === 'bomb' && !this.planting) m.switchWeapon(p, p.weapons.primary || p.weapons.secondary || 'knife');
     const w = WEAPONS[p.active];
     const a = p.ammo[p.active];
     if (w && a && a[0] < w.mag * 0.4 && a[1] > 0 && !p.reloadEnd) m.startReload(p);
     if (a && a[0] === 0 && a[1] === 0) {
       const alt = [p.weapons.primary, p.weapons.secondary].find((id) => id && p.ammo[id]?.[0] > 0);
-      m.switchWeapon(p, alt || 'hoof');
+      m.switchWeapon(p, alt || 'knife');
     }
-    if (w?.slot === 'grenade') m.switchWeapon(p, p.weapons.primary || p.weapons.secondary || 'hoof');
+    if (w?.slot === 'grenade') m.switchWeapon(p, p.weapons.primary || p.weapons.secondary || 'knife');
   }
 
   perceive() {
@@ -252,18 +251,18 @@ export class BotBrain {
     let w = WEAPONS[p.active];
     let a = p.ammo[p.active];
     if (!w || w.slot === 'grenade' || w.slot === 'bomb') {
-      m.switchWeapon(p, p.weapons.primary || p.weapons.secondary || 'hoof');
+      m.switchWeapon(p, p.weapons.primary || p.weapons.secondary || 'knife');
       return;
     }
     if (a && a[0] === 0) {
       const other = [p.weapons.primary, p.weapons.secondary].find((id) => id && id !== p.active && p.ammo[id]?.[0] > 0);
       if (other && dist < 15) m.switchWeapon(p, other);
       else if (a[1] > 0) m.startReload(p);
-      else m.switchWeapon(p, other || 'hoof');
+      else m.switchWeapon(p, other || 'knife');
     }
     w = WEAPONS[p.active];
 
-    if (w.id === 'creaminator' && !p.scoped) p.scoped = 1;
+    if (w.id === 'sniper' && !p.scoped) p.scoped = 1;
 
     // strafing / movement
     const nowS = m.nowS;
@@ -277,7 +276,7 @@ export class BotBrain {
     const tol = Math.max(m.ffa ? 0.04 : 0.012, Math.atan2(this.aimHead ? 0.18 : 0.3, dist)) * (m.ffa ? 2.1 : 1.3);
     const ready = nowS >= this.reactionAt && angErr < tol && nowS >= this.pauseUntil && !p.reloadEnd;
 
-    const precise = w.cls === 'Rifle' || w.cls === 'Sniper' || w.id === 'deag';
+    const precise = w.cls === 'Rifle' || w.cls === 'Sniper' || w.id === 'magnum';
     const moving = m.ffa || !(precise && dist > 10 && ready);
     if (w.slot === 'melee') {
       input.wx = fx; input.wz = fz;
@@ -434,7 +433,7 @@ export class BotBrain {
   throwUtility(targetXZ) {
     const { m, p } = this;
     this.thrown = true;
-    const g = ['butter', 'smoke', 'he', 'molotov'].find((x) => p.weapons.grenades.includes(x));
+    const g = ['flashbang', 'smoke', 'he', 'molotov'].find((x) => p.weapons.grenades.includes(x));
     if (!g) return;
     const eye = m.eye(p);
     const dx = targetXZ[0] - eye[0], dz = targetXZ[1] - eye[2];

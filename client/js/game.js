@@ -7,12 +7,12 @@ import {
 } from '/shared/physics.js';
 import { computeSpread } from '/shared/combat.js';
 import { buildWorld, IMPACT_COLORS } from './world.js';
-import { CowModel } from './cow.js';
+import { SoldierModel } from './soldier.js';
 import { ViewModel, buildWeaponMesh } from './viewmodel.js';
 import { Effects } from './effects.js';
 import { PostFX } from './postfx.js';
 import { Net } from './net.js';
-import { labelTexture } from './textures.js';
+import { labelTexture, normalMapFor } from './textures.js';
 import { weaponLabel } from './hud.js';
 import { Obby } from './obby.js';
 import { ObbyEditor } from './obbyEditor.js';
@@ -23,7 +23,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const REASONS = {
   elim: 'All enemies eliminated',
   time: 'Time ran out — the sites held',
-  bomb: 'The Sour Milk Bomb detonated',
+  bomb: 'The C4 detonated',
   defuse: 'The bomb has been defused',
 };
 
@@ -46,6 +46,7 @@ export class Game {
     this.camera.rotation.order = 'YXZ';
     setActiveMap(instanceMap(MAP.name));
     this.world = buildWorld(this.scene, r, { shadows: settings.shadows });
+    r.toneMappingExposure = this.world.exposure;
     this.mapName = MAP.name;
     this.gameMode = 'defusal';
     this.blocks = new Map();
@@ -57,7 +58,7 @@ export class Game {
 
     // Post-processing. Falls back to plain forward rendering if the GPU/driver rejects the chain.
     try {
-      this.fx = new PostFX(r, this.scene, this.camera, settings.quality);
+      this.fx = new PostFX(r, this.scene, this.camera, settings.quality, settings.style);
     } catch (e) {
       console.warn('Post-processing unavailable, using direct render', e);
       this.fx = null;
@@ -86,7 +87,7 @@ export class Game {
   }
 
   resetState() {
-    this.me = { id: 0, team: 'T', alive: false, hp: 100, ar: 0, hm: false, m: 800, pri: null, sec: 'udder9', gr: [], bomb: false, kit: false, act: 'udder9', am: {}, use: null, buy: false, buyLeft: 0 };
+    this.me = { id: 0, team: 'T', alive: false, hp: 100, ar: 0, hm: false, m: 800, pri: null, sec: 'p9', gr: [], bomb: false, kit: false, act: 'p9', am: {}, use: null, buy: false, buyLeft: 0 };
     this.body = newBody(0, 0, 50);
     this.dashUntil = 0;
     this.dashReadyAt = 0;
@@ -101,7 +102,7 @@ export class Game {
     this.deployUntil = 0;
     this.scoped = 0;
     this.primed = null;
-    this.lastWeapon = 'hoof';
+    this.lastWeapon = 'knife';
     this.lastSwitchT = -10;
     this.ammoLockUntil = 0;
     this.pendingSwitch = null;
@@ -144,6 +145,7 @@ export class Game {
     setActiveMap(instanceMap(name));
     this.mapName = name;
     this.world = buildWorld(this.scene, this.renderer, { shadows: this.settings.shadows });
+    this.renderer.toneMappingExposure = this.world.exposure;
     this.vm.scene.environment = this.scene.environment;
     this.hud.setMap();
   }
@@ -180,6 +182,8 @@ export class Game {
     this.audio.setVolume(this.settings.volume);
     this.hud.applyCrosshair(this.settings);
     this.fx?.setQuality(this.settings.quality);
+    this.fx?.setStyle(this.settings.style);
+    document.body.classList.toggle('bodycam', this.settings.style !== 'tactical');
     this.resize();
   }
 
@@ -344,10 +348,10 @@ export class Game {
         case 'KeyR': this.reload(); break;
         case 'Digit1': this.switchTo(this.me.pri); break;
         case 'Digit2': this.switchTo(this.me.sec); break;
-        case 'Digit3': this.switchTo('hoof'); break;
+        case 'Digit3': this.switchTo('knife'); break;
         case 'Digit4': this.cycleGrenade(); break;
         case 'Digit5': if (this.me.bomb) this.switchTo('bomb'); break;
-        case 'Digit6': case 'KeyX': this.switchTo('cowblock'); break;
+        case 'Digit6': case 'KeyX': this.switchTo('barricade'); break;
         case 'KeyQ': this.switchTo(this.lastWeapon); break;
         case 'KeyB': this.openBuy(); break;
         case 'KeyE': this.setUse(true); this.dash(); break;
@@ -441,7 +445,7 @@ export class Game {
 
   switchTo(id, { silent = false } = {}) {
     if (!id || !this.me.alive || id === this.me.act) return;
-    const owned = id === 'hoof' || id === this.me.pri || id === this.me.sec || this.me.gr.includes(id) || (id === 'bomb' && this.me.bomb) || (id === 'cowblock' && this.me.blocks > 0);
+    const owned = id === 'knife' || id === this.me.pri || id === this.me.sec || this.me.gr.includes(id) || (id === 'bomb' && this.me.bomb) || (id === 'barricade' && this.me.blocks > 0);
     if (!owned) return;
     this.lastWeapon = this.me.act;
     this.me.act = id;
@@ -460,7 +464,7 @@ export class Game {
   }
 
   cycleWeapon(dir) {
-    const list = [this.me.pri, this.me.sec, 'hoof', ...new Set(this.me.gr), this.me.bomb ? 'bomb' : null, this.me.blocks > 0 ? 'cowblock' : null].filter(Boolean);
+    const list = [this.me.pri, this.me.sec, 'knife', ...new Set(this.me.gr), this.me.bomb ? 'bomb' : null, this.me.blocks > 0 ? 'barricade' : null].filter(Boolean);
     const i = list.indexOf(this.me.act);
     this.switchTo(list[(i + dir + list.length) % list.length]);
   }
@@ -542,7 +546,7 @@ export class Game {
     this.audio.throw(null);
     const i = this.me.gr.indexOf(g);
     this.me.gr.splice(i, 1);
-    const next = this.me.gr.includes(g) ? g : (this.me.gr[0] || this.me.pri || this.me.sec || 'hoof');
+    const next = this.me.gr.includes(g) ? g : (this.me.gr[0] || this.me.pri || this.me.sec || 'knife');
     this.pendingSwitch = { id: next, at: this.now() + 0.45 };
     this.lastSwitchT = this.now() + 0.45;
   }
@@ -637,14 +641,14 @@ export class Game {
     const dirs = [];
     for (let i = 0; i < (w.pellets || 1); i++) dirs.push(shotDirection(aimYaw, aimPitch, spread * HUMAN_SPREAD, 0, 0));
     this.recoilIndex++;
-    if (w.cls === 'Pistol' || w.cls === 'Sniper' || w.cls === 'Shotgun') this.punchExtra += w.id === 'deag' || w.cls === 'Sniper' ? 2.8 : 1.4;
+    if (w.cls === 'Pistol' || w.cls === 'Sniper' || w.cls === 'Shotgun') this.punchExtra += w.id === 'magnum' || w.cls === 'Sniper' ? 2.8 : 1.4;
 
     const traces = dirs.map((d) => this.localTrace(eye, d, w.range));
     const claims = traces.map((res) => (res.player ? { id: res.player.id, g: res.group } : null));
     this.net.send({ t: 'shoot', w: w.id, o: eye.map((v) => Math.round(v * 1000) / 1000), d: dirs.map((d) => d.map((v) => Math.round(v * 10000) / 10000)), rt: this.net.serverNow() - INTERP_DELAY, h: claims });
 
     // local visuals
-    const strength = w.cls === 'Sniper' ? 1.8 : w.cls === 'Shotgun' ? 1.6 : w.id === 'deag' ? 1.5 : w.suppressed ? 0.5 : 1;
+    const strength = w.cls === 'Sniper' ? 1.8 : w.cls === 'Shotgun' ? 1.6 : w.id === 'magnum' ? 1.5 : w.suppressed ? 0.5 : 1;
     this.vm.fire(strength);
     this.audio.shot(w.id, null);
     const muzzle = this.vm.muzzleOffset();
@@ -676,39 +680,10 @@ export class Game {
     return { ...best, point: [o[0] + d[0] * best.t, o[1] + d[1] * best.t, o[2] + d[2] * best.t] };
   }
 
-  // ─── Cow blocks ────────────────────────────────────────────
+  // ─── Sandbag barricades ────────────────────────────────────────────
   initBlockAssets() {
-    const face = (withFace) => {
-      const c = document.createElement('canvas');
-      c.width = c.height = 128;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#f3efe6';
-      ctx.fillRect(0, 0, 128, 128);
-      ctx.fillStyle = '#1b1b1d';
-      for (const [x, y, rr] of [[22, 24, 16], [98, 30, 13], [72, 98, 18], [18, 102, 11], [106, 106, 9]]) {
-        ctx.beginPath(); ctx.ellipse(x, y, rr * 1.2, rr, 0.4, 0, Math.PI * 2); ctx.fill();
-      }
-      if (withFace) {
-        ctx.fillStyle = '#f2a0b4';
-        ctx.beginPath(); ctx.ellipse(64, 88, 30, 19, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#6a2c3a';
-        for (const x of [52, 76]) { ctx.beginPath(); ctx.ellipse(x, 88, 5, 7, 0, 0, Math.PI * 2); ctx.fill(); }
-        ctx.fillStyle = '#111';
-        for (const x of [42, 86]) { ctx.beginPath(); ctx.arc(x, 50, 8, 0, Math.PI * 2); ctx.fill(); }
-        ctx.fillStyle = '#fff';
-        for (const x of [45, 89]) { ctx.beginPath(); ctx.arc(x, 47, 3, 0, Math.PI * 2); ctx.fill(); }
-      }
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 8;
-      ctx.strokeRect(4, 4, 120, 120);
-      const t = new THREE.CanvasTexture(c);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.magFilter = THREE.NearestFilter;
-      return t;
-    };
-    const side = new THREE.MeshStandardMaterial({ map: face(false), roughness: 0.8 });
-    const front = new THREE.MeshStandardMaterial({ map: face(true), roughness: 0.8 });
-    this.blockMats = [side, side, side, side, front, front];
+    const map = this.world.tex.sandbag;
+    this.blockMats = new THREE.MeshStandardMaterial({ map, normalMap: normalMapFor(map), roughness: 1 });
     this.blockGeo = new THREE.BoxGeometry(1, 1, 1);
     this.blockGhost = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)),
@@ -764,7 +739,7 @@ export class Game {
     for (const b of this.blocks.values()) {
       if (b.mesh.scale.x < 1) b.mesh.scale.setScalar(Math.min(1, b.mesh.scale.x + 0.1));
     }
-    const show = this.mode === 'playing' && this.me.alive && this.me.act === 'cowblock' && this.me.blocks > 0;
+    const show = this.mode === 'playing' && this.me.alive && this.me.act === 'barricade' && this.me.blocks > 0;
     const target = show ? this.blockTarget() : null;
     this.blockGhost.visible = !!target;
     if (!target) return;
@@ -774,7 +749,7 @@ export class Game {
 
   addBlock(id, c, owner, fresh = false) {
     if (this.blocks.has(id)) return;
-    const box = { min: [c[0], c[1], c[2]], max: [c[0] + 1, c[1] + 1, c[2] + 1], mat: 'cowblock', dyn: true, id, owner };
+    const box = { min: [c[0], c[1], c[2]], max: [c[0] + 1, c[1] + 1, c[2] + 1], mat: 'barricade', dyn: true, id, owner };
     MAP.boxes.push(box);
     const mesh = new THREE.Mesh(this.blockGeo, this.blockMats);
     mesh.position.set(c[0] + 0.5, c[1] + 0.5, c[2] + 0.5);
@@ -818,7 +793,7 @@ export class Game {
     for (const id of [...this.blocks.keys()]) this.removeBlock(id);
   }
 
-  /** Falling onto an enemy's head → Moo Stomp (server validates). */
+  /** Falling onto an enemy's head → Boot Stomp (server validates). */
   checkStomp(vyBefore) {
     if (vyBefore > -3 || !this.me.alive) return;
     const now = this.now();
@@ -895,7 +870,7 @@ export class Game {
       this.hud.roundBanner(m.w, REASONS[m.r] || '', mvp);
       const win = m.w === this.me.team;
       this.audio.jingle(win);
-      this.audio.say(m.r === 'bomb' ? 'Rogue Bulls win' : `${TEAMS[m.w].name} win`);
+      this.audio.say(`${TEAMS[m.w].name} win`);
     });
     n.on('matchEnd', (m) => {
       setTimeout(() => this.hud.matchEnd(m.w, m.score, m.ffa ? m : null), m.ffa ? 300 : 2500);
@@ -1026,7 +1001,7 @@ export class Game {
   }
 
   makeEntity(id, team, name) {
-    const model = new CowModel(team, this.world.tex);
+    const model = new SoldierModel(team);
     this.scene.add(model.root);
     const e = { id, team, name, model, buf: [], alive: true, pos: null, crouch: 0, stepDist: 0, tag: null };
     if (name) this.setTag(e, name);
@@ -1109,7 +1084,7 @@ export class Game {
       this.setUse(false);
       const color = this.ffaLike ? '#f1f3f5' : TEAMS[killer?.team]?.color || '#f1f3f5';
       const txt = killer && m.k !== this.me.id
-        ? `Milked by <span style="color:${color}">${killer.name}</span> · ${weaponLabel(m.w)}${m.hs ? ' · headshot' : ''}`
+        ? `Killed by <span style="color:${color}">${killer.name}</span> · ${weaponLabel(m.w)}${m.hs ? ' · headshot' : ''}`
         : 'You were eliminated';
       this.hud.deathInfo(txt);
       setTimeout(() => this.hud.deathInfo(null), 4000);
@@ -1151,7 +1126,7 @@ export class Game {
     const dist = Math.hypot(p[0] - this.body.x, p[2] - this.body.z);
     switch (m.g) {
       case 'he': this.effects.explosion(p); this.shake = Math.max(this.shake, Math.max(0, 1 - dist / 25)); break;
-      case 'butter': this.effects.flashBurst(p); break;
+      case 'flashbang': this.effects.flashBurst(p); break;
       case 'smoke': this.effects.smoke(m.id, p); break;
       case 'molotov': this.effects.fire(m.id, p); break;
       case 'fizzle': this.effects.fizzle(p); break;
@@ -1165,7 +1140,7 @@ export class Game {
     const byMe = m.id === this.me.id;
     switch (m.s) {
       case 'planted':
-        this.hud.center('The Sour Milk Bomb has been planted', 3500, true);
+        this.hud.center('The C4 has been planted', 3500, true);
         this.audio.say('Bomb has been planted');
         this.nextBeep = 0;
         break;
@@ -1240,7 +1215,11 @@ export class Game {
 
   // Every scene goes through here so post-processing applies uniformly.
   renderScene(scene, vm, dt) {
-    if (this.fx) { this.fx.render(scene, this.camera, vm, dt); return; }
+    if (this.fx) {
+      this.fx.setLens(this.mode === 'playing');
+      this.fx.render(scene, this.camera, vm, dt);
+      return;
+    }
     this.renderer.clear();
     this.renderer.render(scene, this.camera);
     if (vm) vm.render(this.renderer);
@@ -1249,7 +1228,7 @@ export class Game {
   updateLocal(dt) {
     const now = this.now();
     const me = this.me;
-    const w = WEAPONS[me.act] || WEAPONS.hoof;
+    const w = WEAPONS[me.act] || WEAPONS.knife;
 
     // recoil recovery
     if (w.recovery && now - this.lastShotT > (60 / (w.rpm || 600)) * 1.3) {
@@ -1447,7 +1426,7 @@ export class Game {
         if (target?.pos) {
           cam.position.set(target.pos[0], target.pos[1] + eyeHeight(target.crouch), target.pos[2]);
           cam.rotation.set(target.pitch, target.yaw, 0);
-          this.vm.setWeapon(target.weapon || 'udder9', true);
+          this.vm.setWeapon(target.weapon || 'p9', true);
           this.hud.spectate(`Spectating <b>${target.name}</b><small>Left click: next player</small>`);
         } else {
           cam.position.set(0, 40, 20);
@@ -1463,7 +1442,7 @@ export class Game {
     const hud = this.hud;
     const me = this.me;
     const now = this.now();
-    const w = WEAPONS[me.act] || WEAPONS.hoof;
+    const w = WEAPONS[me.act] || WEAPONS.knife;
 
     const speed = Math.hypot(this.body.vx, this.body.vz);
     this.vm.update(dt, {
@@ -1494,7 +1473,7 @@ export class Game {
     hud.setAlive(this.roster, me.id);
     hud.setMoney(me.m);
     hud.setVitals(me.alive ? me.hp : 0, me.ar, me.hm);
-    const a = me.act === 'cowblock' ? [me.blocks || 0, 0] : me.am[me.act] || [0, 0];
+    const a = me.act === 'barricade' ? [me.blocks || 0, 0] : me.am[me.act] || [0, 0];
     hud.reloadProgress(this.reloadUntil ? 1 - Math.max(0, this.reloadUntil - this.now()) / (this.reloadDur || 1) : null);
     hud.setAmmo(me.act, a[0], a[1]);
     hud.setInventory(me);
@@ -1520,7 +1499,7 @@ export class Game {
     // plant / defuse progress + hints
     if (me.use) {
       const frac = (now - this.useLocalStart) / me.use.n;
-      hud.progress(me.use.k === 'plant' ? 'Planting the Sour Milk Bomb' : 'Defusing…', frac);
+      hud.progress(me.use.k === 'plant' ? 'Planting the C4' : 'Defusing…', frac);
     } else if (me.alive && this.phase === 'live') {
       const b = this.bomb;
       if (me.bomb && siteAt(this.body.x, this.body.z)) hud.progress(`Hold E to plant at ${siteAt(this.body.x, this.body.z)}`, 0);

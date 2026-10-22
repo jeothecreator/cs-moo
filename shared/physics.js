@@ -239,11 +239,11 @@ export function raySphere(o, d, c, r) {
   return t >= 0 ? t : (cc < 0 ? 0 : null);
 }
 
-/** Hitboxes for a cow at feet position p with crouch amount c. Returns nearest {t, group}. */
+/** Hitboxes for a player at feet position p with crouch amount c. Returns nearest {t, group}. */
 export function rayPlayer(o, d, p, c) {
   const h = playerHeight(c);
   let best = null;
-  // Generous hitboxes: they cover the cow's horns, arms and held weapon.
+  // Generous hitboxes: they cover the helmet, arms and held weapon.
   const head = raySphere(o, d, [p[0], p[1] + h - 0.2, p[2]], 0.31);
   if (head !== null) best = { t: head, group: 'head' };
   const bodyMin = [p[0] - 0.46, p[1] + h * 0.45, p[2] - 0.46];
