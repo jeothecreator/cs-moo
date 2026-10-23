@@ -83,25 +83,16 @@ export class BotBrain {
     const { m, p } = this;
     this.bought = true;
     if (m.ffa) {
-      const opts = ['carbine', 'carbine', 'carbine', 'shotgun', 'p9', 'scar', 'm4s'];
-      m.buy(p, opts[Math.floor(Math.random() * opts.length)]);
-      if (Math.random() < 0.18) m.buy(p, 'magnum');
+      if (!p.weapons.primary) m.buy(p, 'carbine');
       p.active = p.weapons.primary || p.weapons.secondary;
       return;
     }
     const want = [];
     const $ = () => p.money;
-    if (!p.weapons.primary) {
-      if ($() >= 5750 && Math.random() < 0.15) want.push('sniper');
-      else if (p.team === 'T' && $() >= 3350) want.push('scar');
-      else if (p.team === 'CT' && $() >= 3550) want.push('m4s');
-      else if ($() >= 2650 && Math.random() < 0.25) want.push('shotgun');
-      else if ($() >= 1700 && (m.round === 1 || Math.random() < 0.6)) want.push('carbine');
-    }
+    if (!p.weapons.primary && $() >= 3100) want.push('carbine');
     for (const item of want) m.buy(p, item);
     if ($() >= 1000 && !(p.armor >= 100 && p.helmet)) m.buy(p, 'vesthelm');
     else if ($() >= 650 && p.armor < 100) m.buy(p, 'vest');
-    if (!p.weapons.primary && $() >= 700 && p.weapons.secondary !== 'magnum' && Math.random() < 0.5) m.buy(p, 'magnum');
     if (p.team === 'CT' && $() >= 400 && Math.random() < 0.6) m.buy(p, 'kit');
     const nades = ['smoke', 'flashbang', 'he', 'molotov'].sort(() => Math.random() - 0.5);
     for (const g of nades) if ($() >= 600 && Math.random() < 0.5) m.buy(p, g);
@@ -203,7 +194,7 @@ export class BotBrain {
       }
       this.target = best;
       this.lastSeenT = m.nowS;
-      this.lastKnown = [best.body.x, best.body.z];
+      this.lastKnown = [best.body.x, best.body.z, best.body.y];
       if (!m.ffa) m.reportSighting(p.team, [best.body.x, best.body.y, best.body.z]);
     } else if (this.target && m.nowS - this.lastSeenT > (m.ffa ? 0.25 : 0.4)) {
       this.target = null;
@@ -262,7 +253,6 @@ export class BotBrain {
     }
     w = WEAPONS[p.active];
 
-    if (w.id === 'sniper' && !p.scoped) p.scoped = 1;
 
     // strafing / movement
     const nowS = m.nowS;
@@ -276,7 +266,7 @@ export class BotBrain {
     const tol = Math.max(m.ffa ? 0.04 : 0.012, Math.atan2(this.aimHead ? 0.18 : 0.3, dist)) * (m.ffa ? 2.1 : 1.3);
     const ready = nowS >= this.reactionAt && angErr < tol && nowS >= this.pauseUntil && !p.reloadEnd;
 
-    const precise = w.cls === 'Rifle' || w.cls === 'Sniper' || w.id === 'magnum';
+    const precise = w.cls === 'Rifle' || w.cls === 'Sniper';
     const moving = m.ffa || !(precise && dist > 10 && ready);
     if (w.slot === 'melee') {
       input.wx = fx; input.wz = fz;
@@ -316,10 +306,11 @@ export class BotBrain {
 
     if (p.team === 'T') {
       if (bomb.state === 'dropped' && this.isClosestTo(bomb.pos, 'T')) {
-        goal = [bomb.pos[0], bomb.pos[2]]; goalKey = 'bomb';
+        goal = [bomb.pos[0], bomb.pos[2], bomb.pos[1]]; goalKey = 'bomb';
       } else if (p.weapons.bomb) {
         const site = siteAt(p.body.x, p.body.z);
-        const center = MAP.sites[site || m.teamPlan.T].center;
+        const st = MAP.sites[site || m.teamPlan.T];
+        const center = [st.center[0], st.center[1], st.floor ?? null];
         if (site && Math.hypot(p.body.x - center[0], p.body.z - center[1]) < 7) {
           // plant
           this.planting = true;
@@ -331,17 +322,18 @@ export class BotBrain {
         this.planting = false;
         goal = center; goalKey = 'plant' + m.teamPlan.T;
       } else if (bomb.state === 'planted') {
-        if (!this.postSpot) this.postSpot = m.nav.randomNear(bomb.pos[0], bomb.pos[2], 9);
+        if (!this.postSpot) this.postSpot = m.nav.randomNear(bomb.pos[0], bomb.pos[2], 9, bomb.pos[1]);
         goal = this.postSpot; goalKey = 'post';
         const e = MAP.entries[bomb.site] || MAP.entries.A;
         holdLook = e[p.id % e.length];
       } else {
         const site = m.teamPlan.T;
-        const entry = MAP.entries[site][p.id % 2];
+        const entries = MAP.entries[site];
+        const entry = entries[p.id % entries.length];
         const carrier = m.players.get(bomb.carrier);
         const cDist = carrier ? Math.hypot(carrier.body.x - entry[0], carrier.body.z - entry[1]) : 0;
         const nearEntry = Math.hypot(p.body.x - entry[0], p.body.z - entry[1]) < 4;
-        if (!this.jitter) this.jitter = m.nav.randomNear(...MAP.sites[site].center, 8);
+        if (!this.jitter) this.jitter = m.nav.randomNear(...MAP.sites[site].center, 8, MAP.sites[site].floor ?? null);
         const waitLimit = carrier && !carrier.bot ? 20 : ROUND.ACTION_TIME - 35;
         if (this.goalKey.startsWith('entry') && nearEntry && cDist > 14 && nowS - m.liveStart < waitLimit) {
           goal = entry; goalKey = 'entry' + site;
@@ -354,7 +346,7 @@ export class BotBrain {
       }
     } else {
       if (bomb.state === 'planted') {
-        goal = [bomb.pos[0], bomb.pos[2]]; goalKey = 'defuse';
+        goal = [bomb.pos[0], bomb.pos[2], bomb.pos[1]]; goalKey = 'defuse';
         if (Math.hypot(p.body.x - bomb.pos[0], p.body.z - bomb.pos[2]) < 1.4) {
           p.use = true;
           this.idleLook(dt);
@@ -410,7 +402,7 @@ export class BotBrain {
           const score = (this.campy ? nearH : Math.min(22, nearH)) + nearB * 0.35 + Math.random() * 6;
           if (score > bestScore) { bestScore = score; best = pt; this.roamIdx = i; }
         }
-        this.roamGoal = m.nav.randomNear(best[0], best[1], this.campy ? 1.2 : 3);
+        this.roamGoal = m.nav.randomNear(best[0], best[1], this.campy ? 1.2 : 3, best[2] ?? null);
         this.arrived = false;
       }
       goal = this.roamGoal;
@@ -451,7 +443,7 @@ export class BotBrain {
     if (key !== this.goalKey || nowS > this.repathAt || !this.path) {
       if (key !== this.goalKey) this.arrived = false;
       this.goalKey = key;
-      this.path = m.nav.findPath(p.body.x, p.body.z, goal[0], goal[1]);
+      this.path = m.nav.findPath(p.body.x, p.body.z, goal[0], goal[1], p.body.y, goal[2] ?? null);
       this.pathIdx = 0;
       this.repathAt = nowS + rand(2, 3.5);
     }

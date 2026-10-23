@@ -5,9 +5,10 @@ import {
   UTIL, GRENADE_IDS, MAX_GRENADES, FFA, DEFAULT_PRIMARY, REGEN, BLOCKS, TEAMS, modeConfig, lossBonus,
 } from '../shared/constants.js';
 import { MAP, MODES, setActiveMap, instanceMap, inRect, siteAt } from '../shared/map.js';
+import { addBrush, removeBrush } from '../shared/brushes.js';
 import {
   newBody, stepBody, raycastAll, raycastWorld, rayPlayer, eyeHeight, playerHeight, lineClear,
-  dirFromAngles, shotDirection, boxBlocked, segmentSphere,
+  dirFromAngles, shotDirection, boxBlocked, segmentSphere, blockFits,
 } from '../shared/physics.js';
 import { computeSpread, armorDamage, rangeFalloff } from '../shared/combat.js';
 import { getNav } from './nav.js';
@@ -27,6 +28,8 @@ export class Match {
     this.players = new Map();
     this.nextId = 1;
     this.nav = getNav();
+    // Compiled maps get their bot hold spots, site entries and roam points from the nav.
+    if (!this.mapObj.holdSpots) Object.assign(this.mapObj, this.nav.spots ||= this.nav.autoSpots());
     this.phase = 'waiting';
     this.phaseEnd = 0;
     this.tickCount = 0;
@@ -277,7 +280,7 @@ export class Match {
         nearest = Math.min(nearest, d);
         // A spawn in an enemy's immediate line of sight is much easier to camp than
         // one behind cover, even when the straight-line distance is similar.
-        if (d < 24 && lineClear([s[0], PLAYER.EYE, s[1]], this.eye(q))) exposed++;
+        if (d < 24 && lineClear([s[0], (s[2] ?? 0) + PLAYER.EYE, s[1]], this.eye(q))) exposed++;
       }
       return { s, nearest, exposed };
     }).sort((a, b) => b.nearest - a.nearest || a.exposed - b.exposed);
@@ -287,17 +290,19 @@ export class Match {
   }
 
   spawn(p, resetGear, index) {
-    let x, z, yaw;
+    // Spawn entries are [x, z, y?, yaw?]; compiled maps carry real heights and facings.
+    let s, yaw;
     if (this.ffa) {
-      [x, z] = this.pickFFASpawn(p);
-      yaw = Math.atan2(x, z);
+      s = this.pickFFASpawn(p);
+      yaw = s[3] ?? Math.atan2(s[0], s[1]);
     } else {
       const spawns = MAP.spawns[p.team];
       if (index == null) index = this.teamPlayers(p.team).indexOf(p);
-      [x, z] = spawns[index % spawns.length];
-      yaw = MAP.spawnYaw[p.team];
+      s = spawns[index % spawns.length];
+      yaw = s[3] ?? MAP.spawnYaw[p.team];
     }
-    p.body = newBody(x, 0, z);
+    const [x, z] = s;
+    p.body = newBody(x, s[2] ?? 0, z);
     p.yaw = yaw;
     p.pitch = 0;
     p.alive = true;
@@ -822,11 +827,8 @@ export class Match {
   }
 
   pointSolid(x, y, z) {
-    if (y < 0.06) return true;
-    for (const b of MAP.boxes) {
-      if (x > b.min[0] - 0.06 && x < b.max[0] + 0.06 && y > b.min[1] - 0.06 && y < b.max[1] + 0.06 && z > b.min[2] - 0.06 && z < b.max[2] + 0.06) return true;
-    }
-    return false;
+    if (!MAP.boxes.noGround && y < 0.06) return true;
+    return !!boxBlocked(x, y - 0.06, z, 0.06, 0.12);
   }
 
   updateNades(dt) {
@@ -955,28 +957,20 @@ export class Match {
     if (!p.alive || this.phase === 'waiting' || this.phase === 'over' || !(p.blocksLeft > 0)) return;
     if (this.nowS - (p.lastPlace || 0) < BLOCKS.COOLDOWN) return;
     const c = Array.isArray(msg.c) ? msg.c.map(Number) : [];
-    if (c.length !== 3 || !c.every(Number.isInteger)) return;
+    if (c.length !== 3 || !Number.isInteger(c[0]) || !Number.isInteger(c[2]) || !Number.isFinite(c[1])) return;
     const [x, y, z] = c;
-    const B = MAP.bounds;
-    if (y < 0 || y > BLOCKS.MAX_HEIGHT || x < B.minX || x + 1 > B.maxX || z < B.minZ || z + 1 > B.maxZ) return;
     const eye = this.eye(p);
     if (Math.hypot(x + 0.5 - eye[0], y + 0.5 - eye[1], z + 0.5 - eye[2]) > BLOCKS.REACH + 1.2) return;
     const min = [x, y, z], max = [x + 1, y + 1, z + 1];
-    const E = 0.01;
-    let supported = y === 0;
     const boxes = this.mapObj.boxes;
-    for (const b of boxes) {
-      if (max[0] - E > b.min[0] && min[0] + E < b.max[0] && max[1] - E > b.min[1] && min[1] + E < b.max[1] && max[2] - E > b.min[2] && min[2] + E < b.max[2]) return;
-      if (!supported && max[0] + E > b.min[0] && min[0] - E < b.max[0] && max[1] + E > b.min[1] && min[1] - E < b.max[1] && max[2] + E > b.min[2] && min[2] - E < b.max[2]) supported = true;
-    }
-    if (!supported) return;
+    if (!blockFits(x, y, z, boxes)) return;
     for (const q of this.players.values()) {
       if (!q.alive) continue;
       const qb = q.body, h = playerHeight(qb.crouch), r = PLAYER.RADIUS;
       if (max[0] > qb.x - r && min[0] < qb.x + r && max[1] > qb.y && min[1] < qb.y + h && max[2] > qb.z - r && min[2] < qb.z + r) return;
     }
     const block = { min, max, mat: 'barricade', dyn: true, id: this.blockId++, owner: p.id, hp: BLOCKS.HP, born: this.nowS };
-    boxes.push(block);
+    addBrush(boxes, block);
     this.blocks.set(block.id, block);
     p.blocksLeft--;
     p.lastPlace = this.nowS;
@@ -1005,18 +999,13 @@ export class Match {
     const b = this.blocks.get(id);
     if (!b) return;
     this.blocks.delete(id);
-    const i = this.mapObj.boxes.indexOf(b);
-    if (i >= 0) this.mapObj.boxes.splice(i, 1);
+    removeBrush(this.mapObj.boxes, b);
     this.broadcast({ t: 'block', op: 'del', id, by });
   }
 
   clearBlocks() {
     if (!this.blocks?.size) return;
-    const boxes = this.mapObj.boxes;
-    for (const b of this.blocks.values()) {
-      const i = boxes.indexOf(b);
-      if (i >= 0) boxes.splice(i, 1);
-    }
+    for (const b of this.blocks.values()) removeBrush(this.mapObj.boxes, b);
     this.blocks.clear();
     this.broadcast({ t: 'block', op: 'clear' });
   }
@@ -1172,7 +1161,7 @@ export class Match {
       if (p.scoped && w.scopedSpeedMult) speedMult = w.scopedSpeedMult;
       const inp = p.input;
       if (p.useStart) { inp.wx = 0; inp.wz = 0; }
-      stepBody(p.body, { ...inp, speedMult, slow: this.inFire(p.body.x, p.body.y, p.body.z) }, dt);
+      stepBody(p.body, { ...inp, pitch: p.pitch, speedMult, slow: this.inFire(p.body.x, p.body.y, p.body.z) }, dt);
     }
 
     for (const p of this.players.values()) {

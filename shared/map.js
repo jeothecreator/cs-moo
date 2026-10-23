@@ -1,4 +1,6 @@
 // Map registry. Units are metres; +Y up.
+import cacheData from './maps/de_cache.js';
+import { decodeBrushes } from './brushes.js';
 // `MAP` is a live binding to the active map: the client sets it once per session,
 // the server sets it at the start of every match tick / message (Node is single-threaded).
 
@@ -243,26 +245,63 @@ const rooftopMap = {
   paved: [{ minX: -6, maxX: 6, minZ: -6, maxZ: 6 }],
 };
 
-export const MAPS = { de_trenches: trenches, dm_seoul: seoulMap, aim_rooftop: rooftopMap };
+// ─── de_cache: compiled from the Hammer source (tools/vmf2map.mjs) ──────────────
+// Real brushwork with slopes, stairs, terrain and ladders, so it stands on no implicit floor.
+// Bot hold spots / entries are placed automatically by the nav (server/nav.js autoSpots).
+const cacheSpawnTop = Math.max(...[...cacheData.spawns.T, ...cacheData.spawns.CT].map((s) => s[2]));
+const cache = {
+  name: 'de_cache',
+  title: cacheData.title,
+  mode: 'defusal',
+  theme: 'cache',
+  compiled: true,
+  noGround: true,
+  bounds: cacheData.bounds,
+  floorY: cacheData.floorY,
+  ceilingY: cacheSpawnTop + 22,
+  wallH: 0,
+  boxes: decodeBrushes(cacheData),
+  spawns: cacheData.spawns,
+  spawnYaw: { T: Math.PI, CT: 0 },
+  buyZones: cacheData.buyZones,
+  sites: cacheData.sites,
+  ladders: cacheData.ladders,
+  sun: cacheData.sun,
+  radar: '/assets/maps/de_cache_radar.png', // tools/radar.mjs
+  holdSpots: null,
+  entries: null,
+  roam: null,
+  silos: [],
+  decor: {},
+  paved: [],
+};
+cache.boxes.noGround = true;
+
+/** Overview images (tools/radar.mjs) cover MAP.bounds at this many pixels per metre. */
+export const RADAR_PX = 4;
+
+export const MAPS = { de_cache: cache, de_trenches: trenches, dm_seoul: seoulMap, aim_rooftop: rooftopMap };
 
 export const MODES = {
-  defusal: { id: 'defusal', name: 'Defusal', desc: '5v5 · Plant or defuse the C4', map: 'de_trenches' },
-  ffa: { id: 'ffa', name: 'Free-for-all', desc: 'Everyone vs everyone · First to 20 kills', map: 'dm_seoul' },
+  defusal: { id: 'defusal', name: 'Defusal', desc: '5v5 · Plant or defuse the C4', map: 'de_cache' },
+  ffa: { id: 'ffa', name: 'Free-for-all', desc: 'Everyone vs everyone · First to 20 kills', map: 'de_cache' },
   duel: { id: 'duel', name: '1v1 Duel', desc: 'Head-to-head · First to 10 kills', map: 'aim_rooftop' },
 };
 
-export let MAP = trenches;
+export let MAP = cache;
 
 /** Accepts a map name or a map object (e.g. from instanceMap). */
 export function setActiveMap(nameOrMap) {
-  MAP = typeof nameOrMap === 'object' && nameOrMap ? nameOrMap : (MAPS[nameOrMap] || trenches);
+  MAP = typeof nameOrMap === 'object' && nameOrMap ? nameOrMap : (MAPS[nameOrMap] || cache);
   return MAP;
 }
 
 /** A private copy of a map whose box list can hold placed barricades. */
 export function instanceMap(name) {
-  const base = MAPS[name] || trenches;
-  return { ...base, boxes: [...base.boxes] };
+  const base = MAPS[name] || cache;
+  const boxes = [...base.boxes];
+  boxes.noGround = !!base.noGround;
+  return { ...base, boxes };
 }
 
 export function inRect(r, x, z) {

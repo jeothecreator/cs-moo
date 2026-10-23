@@ -92,7 +92,7 @@ export class HUD {
     const img = (id, cls = '') => `<img class="${cls}" src="${weaponIcon(id)}" alt="">`;
     if (me.pri) row(1, me.act === me.pri, img(me.pri), esc(WEAPONS[me.pri].name));
     if (me.sec) row(2, me.act === me.sec, img(me.sec), esc(WEAPONS[me.sec].name));
-    row(3, me.act === 'knife', img('knife'), 'Hoof');
+    row(3, me.act === 'knife', img('knife'), 'Knife');
     if (me.gr?.length) row(4, WEAPONS[me.act]?.slot === 'grenade', me.gr.map((g) => img(g, `nade ${g === me.act ? 'sel' : ''}`)).join(''), 'Utility');
     if (me.bomb) row(5, me.act === 'bomb', img('bomb'), 'Bomb');
     if (me.blocks > 0) row(6, me.act === 'barricade', img('barricade'), `Sandbags ×${me.blocks}`);
@@ -321,32 +321,59 @@ export class HUD {
 
   // ─── Radar ────────────────────────────────────────────────
   renderRadarMap() {
-    const S = 6;
+    const S = 6, B = MAP.bounds;
     const c = document.createElement('canvas');
-    this.off = -MAP.bounds.minX + 4;
-    c.width = c.height = (MAP.bounds.maxX - MAP.bounds.minX + 8) * S;
+    this.offX = -B.minX + 4;
+    this.offZ = -B.minZ + 4;
+    c.width = (B.maxX - B.minX + 8) * S;
+    c.height = (B.maxZ - B.minZ + 8) * S;
     const ctx = c.getContext('2d');
-    ctx.fillStyle = 'rgba(58,56,44,0.9)';
-    ctx.fillRect(0, 0, c.width, c.height);
-    const px = (v) => (v + this.off) * S;
-    for (const s of Object.values(MAP.sites)) {
-      const k = s.name;
-      ctx.fillStyle = 'rgba(214,64,40,0.28)';
-      ctx.fillRect(px(s.minX), px(s.minZ), (s.maxX - s.minX) * S, (s.maxZ - s.minZ) * S);
-      ctx.fillStyle = 'rgba(255,120,90,0.9)';
-      ctx.font = 'bold 60px Bebas Neue, Impact, sans-serif';
+    const px = (v) => (v + this.offX) * S, pz = (v) => (v + this.offZ) * S;
+    const label = (text, x, z, color, size) => {
+      ctx.font = `bold ${size}px Bebas Neue, Impact, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(k, px(s.center[0]), px(s.center[1]));
+      ctx.lineWidth = size / 8;
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(text, px(x), pz(z));
+      ctx.fillStyle = color;
+      ctx.fillText(text, px(x), pz(z));
+    };
+    const overlay = () => {
+      for (const s of Object.values(MAP.sites)) {
+        ctx.fillStyle = 'rgba(214,64,40,0.22)';
+        ctx.fillRect(px(s.minX), pz(s.minZ), (s.maxX - s.minX) * S, (s.maxZ - s.minZ) * S);
+        ctx.strokeStyle = 'rgba(255,110,80,0.7)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(px(s.minX), pz(s.minZ), (s.maxX - s.minX) * S, (s.maxZ - s.minZ) * S);
+        label(s.name, s.center[0], s.center[1], 'rgba(255,120,90,0.95)', 72);
+      }
+      for (const [team, z] of Object.entries(MAP.buyZones || {})) {
+        if (z?.minX == null) continue;
+        label(team, (z.minX + z.maxX) / 2, (z.minZ + z.maxZ) / 2, team === 'T' ? 'rgba(240,183,90,0.9)' : 'rgba(126,179,245,0.9)', 44);
+      }
+    };
+    if (MAP.radar) { // pre-rendered overview (tools/radar.mjs)
+      const img = new Image();
+      img.onload = () => {
+        if (this.radarImg !== c) return; // map changed while loading
+        ctx.drawImage(img, 4 * S, 4 * S, (B.maxX - B.minX) * S, (B.maxZ - B.minZ) * S);
+        overlay();
+      };
+      img.src = MAP.radar;
+      return c;
     }
+    ctx.fillStyle = 'rgba(58,56,44,0.9)';
+    ctx.fillRect(0, 0, c.width, c.height);
     for (const b of MAP.boxes) {
       const tall = b.max[1] > 3;
       ctx.fillStyle = tall ? '#8a8a7e' : '#b0a888';
-      ctx.fillRect(px(b.min[0]), px(b.min[2]), (b.max[0] - b.min[0]) * S, (b.max[2] - b.min[2]) * S);
+      ctx.fillRect(px(b.min[0]), pz(b.min[2]), (b.max[0] - b.min[0]) * S, (b.max[2] - b.min[2]) * S);
       ctx.strokeStyle = 'rgba(0,0,0,0.5)';
       ctx.lineWidth = 2;
-      ctx.strokeRect(px(b.min[0]), px(b.min[2]), (b.max[0] - b.min[0]) * S, (b.max[2] - b.min[2]) * S);
+      ctx.strokeRect(px(b.min[0]), pz(b.min[2]), (b.max[0] - b.min[0]) * S, (b.max[2] - b.min[2]) * S);
     }
+    overlay();
     return c;
   }
 
@@ -361,13 +388,13 @@ export class HUD {
     ctx.translate(W / 2, W / 2);
     ctx.rotate(me.yaw);
     ctx.scale(S / IMG, S / IMG);
-    ctx.translate(-(me.x + this.off) * IMG, -(me.z + this.off) * IMG);
+    ctx.translate(-(me.x + this.offX) * IMG, -(me.z + this.offZ) * IMG);
     ctx.globalAlpha = 0.95;
     ctx.drawImage(this.radarImg, 0, 0);
     ctx.globalAlpha = 1;
     const k = IMG / S;
     const dot = (x, z, color, r, yaw) => {
-      const cx = (x + this.off) * IMG, cz = (z + this.off) * IMG;
+      const cx = (x + this.offX) * IMG, cz = (z + this.offZ) * IMG;
       if (yaw != null) {
         ctx.strokeStyle = color;
         ctx.lineWidth = 3 * k;
@@ -388,7 +415,7 @@ export class HUD {
       ctx.font = `${22 * k}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const cx = (bomb.x + this.off) * IMG, cz = (bomb.z + this.off) * IMG;
+      const cx = (bomb.x + this.offX) * IMG, cz = (bomb.z + this.offZ) * IMG;
       ctx.save();
       ctx.translate(cx, cz);
       ctx.rotate(-me.yaw);
@@ -400,7 +427,7 @@ export class HUD {
       dot(p.x, p.z, col, 7 * k, p.enemy ? null : p.yaw);
       if (p.bomb && !p.enemy) {
         ctx.fillStyle = '#ff3030';
-        ctx.fillRect((p.x + this.off) * IMG - 3 * k, (p.z + this.off) * IMG - 3 * k, 6 * k, 6 * k);
+        ctx.fillRect((p.x + this.offX) * IMG - 3 * k, (p.z + this.offZ) * IMG - 3 * k, 6 * k, 6 * k);
       }
     }
     if (me.alive) dot(me.x, me.z, '#ffffff', 8 * k, me.yaw);

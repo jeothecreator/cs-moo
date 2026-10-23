@@ -6,7 +6,7 @@ import { formatRunTime } from './obby.js';
 import { myObbies, inviteLink } from './obbyEditor.js';
 import { HUD } from './hud.js';
 import { AudioEngine } from './audio.js';
-import { preloadAssets } from './assets.js';
+import { preloadAssets, preloadMap } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -39,7 +39,7 @@ function saveSettings(s) {
 // Korean shop signage is painted into canvases when a map is built, so the webfont has to be ready
 // first (capped, so a slow font CDN never blocks the menu). Models stream in behind the menu.
 await Promise.race([document.fonts.load('900 64px "Noto Sans KR"'), new Promise((r) => setTimeout(r, 2500))]).catch(() => {});
-const assetsReady = preloadAssets();
+const assetsReady = Promise.all([preloadAssets(), preloadMap('de_cache')]);
 
 const settings = loadSettings();
 const hud = new HUD();

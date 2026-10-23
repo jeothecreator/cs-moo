@@ -108,19 +108,12 @@ function pattern(n, fn) {
 }
 
 export const RECOIL = {
-  scar: pattern(30, (i) => [
-    i < 8 ? 0.18 * Math.sin(i * 1.7) : 3.4 * Math.sin((i - 8) / 3.6) + 0.25 * Math.sin(i * 2.3),
-    Math.min(i, 9) * 0.95 + Math.max(0, i - 9) * 0.1,
+  // M4: tight first shots, then a climb that drifts right and settles into a left–right sway.
+  carbine: pattern(30, (i) => [
+    i < 7 ? 0.12 * Math.sin(i * 1.3) : 1.6 * Math.sin((i - 7) / 4.2) + 0.35 * Math.sin(i * 1.9),
+    Math.min(i, 10) * 0.7 + Math.max(0, i - 10) * 0.08,
   ]),
-  m4s: pattern(25, (i) => [
-    i < 10 ? 0.12 * Math.sin(i * 1.3) : 1.9 * Math.sin((i - 10) / 4.5),
-    Math.min(i, 10) * 0.66 + Math.max(0, i - 10) * 0.07,
-  ]),
-  carbine: pattern(30, (i) => [0.9 * Math.sin(i * 0.8) + 0.3 * Math.sin(i * 2.1), Math.min(i, 12) * 0.45]),
-  p9: pattern(18, (i) => [0.35 * Math.sin(i * 1.9), Math.min(i * 1.1, 7)]),
-  magnum: pattern(7, (i) => [0.6 * Math.sin(i * 2.4), Math.min(i * 3.8, 12)]),
-  shotgun: pattern(7, (i) => [0, Math.min(i * 2.5, 8)]),
-  sniper: pattern(5, (i) => [0, i * 4]),
+  p9: pattern(20, (i) => [0.35 * Math.sin(i * 1.9), Math.min(i * 1.1, 7)]),
   none: [[0, 0]],
 };
 
@@ -139,48 +132,12 @@ export const WEAPONS = {
     spread: 0.0045, moveSpread: 0.012, jumpSpread: 0.09, range: 120, falloff: 0.96,
     speedMult: 0.97, killReward: 300, recoil: 'p9', penetration: 1, deploy: 0.6, recovery: 9,
   },
-  magnum: {
-    id: 'magnum', name: '.50 Magnum', slot: 'secondary', cls: 'Pistol', price: 700, team: 'any',
-    damage: { head: 150, body: 52, leg: 38 }, armorPen: 0.932,
-    rpm: 267, mag: 7, reserve: 35, reload: 2.2, auto: false, pellets: 1,
-    spread: 0.002, moveSpread: 0.032, jumpSpread: 0.1, range: 150, falloff: 0.97,
-    speedMult: 0.93, killReward: 300, recoil: 'magnum', penetration: 2, deploy: 0.8, recovery: 3.5,
-  },
   carbine: {
-    id: 'carbine', name: 'M4 Carbine', slot: 'primary', cls: 'Carbine', price: 1050, team: 'any',
-    damage: { head: 60, body: 20, leg: 16 }, armorPen: 0.575,
-    rpm: 800, mag: 30, reserve: 100, reload: 2.6, auto: true, pellets: 1,
-    spread: 0.006, moveSpread: 0.014, jumpSpread: 0.07, range: 80, falloff: 0.9,
-    speedMult: 0.97, killReward: 600, recoil: 'carbine', penetration: 1, deploy: 0.7, recovery: 14,
-  },
-  shotgun: {
-    id: 'shotgun', name: 'M870 Shotgun', slot: 'primary', cls: 'Shotgun', price: 2000, team: 'any',
-    damage: { head: 60, body: 24, leg: 18 }, armorPen: 0.8,
-    rpm: 240, mag: 7, reserve: 32, reload: 2.9, auto: true, pellets: 8,
-    spread: 0.055, moveSpread: 0.02, jumpSpread: 0.08, range: 35, falloff: 0.72,
-    speedMult: 0.9, killReward: 900, recoil: 'shotgun', penetration: 0, deploy: 0.9, recovery: 6, adsSpread: 0.8, shellReload: 0.5,
-  },
-  scar: {
-    id: 'scar', name: 'SCAR-H', slot: 'primary', cls: 'Rifle', price: 2700, team: 'T',
-    damage: { head: 143, body: 36, leg: 27 }, armorPen: 0.775,
-    rpm: 600, mag: 30, reserve: 90, reload: 2.5, auto: true, pellets: 1,
-    spread: 0.003, moveSpread: 0.045, jumpSpread: 0.12, range: 200, falloff: 0.98,
-    speedMult: 0.86, killReward: 300, recoil: 'scar', penetration: 2, deploy: 1.0, recovery: 11,
-  },
-  m4s: {
-    id: 'm4s', name: 'M4A1-S', slot: 'primary', cls: 'Rifle', price: 2900, team: 'CT',
-    damage: { head: 120, body: 33, leg: 24 }, armorPen: 0.7,
-    rpm: 600, mag: 25, reserve: 75, reload: 3.1, auto: true, pellets: 1,
-    spread: 0.0025, moveSpread: 0.04, jumpSpread: 0.11, range: 200, falloff: 0.985,
-    speedMult: 0.9, killReward: 300, recoil: 'm4s', penetration: 2, deploy: 1.0, recovery: 12, suppressed: true,
-  },
-  sniper: {
-    id: 'sniper', name: 'L96A1 Sniper', slot: 'primary', cls: 'Sniper', price: 4750, team: 'any',
-    damage: { head: 300, body: 115, leg: 85 }, armorPen: 0.975,
-    rpm: 41, mag: 5, reserve: 30, reload: 3.7, auto: false, pellets: 1,
-    spread: 0.035, scopedSpread: 0.0003, moveSpread: 0.1, jumpSpread: 0.2, range: 300, falloff: 0.995,
-    speedMult: 0.8, scopedSpeedMult: 0.6, killReward: 100, recoil: 'sniper', penetration: 3, deploy: 1.2,
-    recovery: 2, scope: [20],
+    id: 'carbine', name: 'M4 Carbine', slot: 'primary', cls: 'Rifle', price: 3100, team: 'any',
+    damage: { head: 130, body: 33, leg: 25 }, armorPen: 0.7,
+    rpm: 666, mag: 30, reserve: 90, reload: 3.0, auto: true, pellets: 1,
+    spread: 0.0022, moveSpread: 0.042, jumpSpread: 0.12, range: 200, falloff: 0.985,
+    speedMult: 0.9, killReward: 300, recoil: 'carbine', penetration: 2, deploy: 1.0, recovery: 12,
   },
   // Utilities
   flashbang: { id: 'flashbang', name: 'Flashbang', slot: 'grenade', cls: 'Grenade', price: 200, team: 'any', max: 2, speedMult: 1, fuse: 1.6 },
@@ -202,10 +159,8 @@ export const EQUIPMENT = {
 };
 
 export const BUY_MENU = [
-  { cat: 'Pistols', items: ['p9', 'magnum'] },
-  { cat: 'Carbines', items: ['carbine'] },
-  { cat: 'Heavy', items: ['shotgun'] },
-  { cat: 'Rifles', items: ['scar', 'm4s', 'sniper'] },
+  { cat: 'Pistols', items: ['p9'] },
+  { cat: 'Rifles', items: ['carbine'] },
   { cat: 'Gear', items: ['vest', 'vesthelm', 'kit'] },
   { cat: 'Utility', items: ['flashbang', 'smoke', 'he', 'molotov'] },
 ];

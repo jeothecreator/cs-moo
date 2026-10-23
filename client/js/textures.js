@@ -233,6 +233,7 @@ const RELIEF = {
   mud: 1.4, dirt: 1.6, revet: 2.4, sandbag: 3.2, bunker: 1.6, crate: 1.8, wood: 2.2, door: 2.2, metal: 2.6,
   duckboard: 2.6, asphalt: 0.9, pavers: 2.2, facade: 0.8, shop: 0.5, brick: 2.8, concrete: 1.2, rooftop: 0.8,
   steel: 0.5, parapet: 1.4, camo: 0.6, cardboard: 1.0, plaster: 0.6,
+  tile: 1.6, redBeam: 0.5, beam: 0.6, panel: 1.8, rollup: 1.6, container: 1.6, floorPlate: 2.4, woodCrate: 2.0, tarp: 0.8, field: 1.2, caution: 0.4, blacktop: 1.0, gravel: 1.3,
 };
 
 // ─── surfaces ─────────────────────────────────────────────────
@@ -622,6 +623,212 @@ export function makeTextures() {
       ctx.beginPath(); ctx.moveTo(i * step + S, 0); ctx.lineTo(i * step, S); ctx.stroke();
     }
     tex.fence = toTexture(c);
+  }
+
+  // ── Cache: industrial yard — white tile, red steel, grey cladding, containers ──
+  { // pale concrete paving slabs, grass pushing through the joints
+    const S = 512, n = 4, t = S / n;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#8f9474'; ctx.fillRect(0, 0, S, S);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      ctx.fillStyle = vary('#cfccc2', 0.035); ctx.fillRect(i * t + 2, j * t + 2, t - 4, t - 4);
+      if (rnd() < 0.25) { ctx.fillStyle = 'rgba(120,108,88,0.12)'; ctx.fillRect(i * t + 2, j * t + 2, t - 4, t - 4); }
+      if (rnd() < 0.2) crack(ctx, i * t + rnd() * t, j * t + rnd() * t, 6, 'rgba(60,56,48,0.4)', 1);
+    }
+    for (let k = 0; k < 500; k++) { // grass tufts in the joints
+      const along = rnd() < 0.5, line = Math.floor(rnd() * (n + 1)) * t, pos = rnd() * S;
+      const x = along ? pos : line + (rnd() - 0.5) * 4, y = along ? line + (rnd() - 0.5) * 4 : pos;
+      ctx.strokeStyle = `rgba(${90 + rnd() * 50},${115 + rnd() * 40},${50 + rnd() * 20},0.7)`;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (rnd() - 0.5) * 5, y - 2 - rnd() * 4); ctx.stroke();
+    }
+    fbm(ctx, S, S, { base: 4, octaves: 5, alpha: 0.22 });
+    for (let k = 0; k < 8; k++) blotWrap(ctx, S, S, rnd() * S, rnd() * S, 30 + rnd() * 70, 'rgba(90,80,62,A)', 0.18);
+    grain(ctx, S, S, 10);
+    tex.tile = toTexture(c);
+  }
+  { // weathered blacktop, grass in the cracks (Cache's yard roads)
+    const S = 512;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#4c4c4e'; ctx.fillRect(0, 0, S, S);
+    fbm(ctx, S, S, { base: 5, octaves: 6, alpha: 0.32 });
+    for (let k = 0; k < 9000; k++) { // aggregate
+      const v = 60 + rnd() * 70;
+      ctx.fillStyle = `rgba(${v},${v},${v + 4},0.35)`;
+      ctx.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 1.5, 1 + rnd() * 1.5);
+    }
+    for (let k = 0; k < 12; k++) {
+      const x = rnd() * S, y = rnd() * S;
+      crack(ctx, x, y, 10, 'rgba(22,22,22,0.7)', 1.4);
+      for (let g = 0; g < 14; g++) { // weeds along the crack
+        ctx.strokeStyle = `rgba(${80 + rnd() * 40},${105 + rnd() * 40},${45 + rnd() * 20},0.7)`;
+        const gx = x + (rnd() - 0.5) * 50, gy = y + (rnd() - 0.5) * 50;
+        ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + (rnd() - 0.5) * 4, gy - 2 - rnd() * 4); ctx.stroke();
+      }
+    }
+    for (let k = 0; k < 6; k++) blotWrap(ctx, S, S, rnd() * S, rnd() * S, 40 + rnd() * 80, 'rgba(30,30,32,A)', 0.2);
+    grain(ctx, S, S, 12);
+    tex.blacktop = toTexture(c);
+  }
+  { // pale yard gravel with sand and weeds (Cache's blended ground)
+    const S = 512;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#9b958a'; ctx.fillRect(0, 0, S, S);
+    fbm(ctx, S, S, { base: 4, octaves: 6, alpha: 0.28 });
+    for (let k = 0; k < 14000; k++) {
+      const v = 110 + rnd() * 90, r = 0.6 + rnd() * 1.6;
+      ctx.fillStyle = `rgba(${v + 6},${v + 2},${v - 6},${0.25 + rnd() * 0.3})`;
+      ctx.beginPath(); ctx.arc(rnd() * S, rnd() * S, r, 0, Math.PI * 2); ctx.fill();
+    }
+    for (let k = 0; k < 10; k++) blotWrap(ctx, S, S, rnd() * S, rnd() * S, 30 + rnd() * 70, 'rgba(120,104,80,A)', 0.2);
+    for (let k = 0; k < 700; k++) {
+      ctx.strokeStyle = `rgba(${85 + rnd() * 40},${110 + rnd() * 40},${50 + rnd() * 20},0.55)`;
+      const x = rnd() * S, y = rnd() * S;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (rnd() - 0.5) * 4, y - 2 - rnd() * 4); ctx.stroke();
+    }
+    grain(ctx, S, S, 10);
+    tex.gravel = toTexture(c);
+  }
+  { // yellow / black caution stripes
+    const S = 256;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#d8b030'; ctx.fillRect(0, 0, S, S);
+    ctx.fillStyle = '#1c1c1c';
+    for (let k = -S; k < S * 2; k += 64) { ctx.beginPath(); ctx.moveTo(k, 0); ctx.lineTo(k + 32, 0); ctx.lineTo(k + 32 - S, S); ctx.lineTo(k - S, S); ctx.fill(); }
+    fbm(ctx, S, S, { base: 4, octaves: 4, alpha: 0.3 });
+    for (let k = 0; k < 30; k++) { ctx.fillStyle = `rgba(${120 + rnd() * 40},${110 + rnd() * 30},90,0.6)`; ctx.fillRect(rnd() * S, rnd() * S, 2 + rnd() * 8, 1 + rnd() * 3); }
+    grain(ctx, S, S, 10);
+    tex.caution = toTexture(c);
+  }
+  { // red painted structural steel
+    const S = 256;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#9b2a1f'; ctx.fillRect(0, 0, S, S);
+    fbm(ctx, S, S, { base: 4, octaves: 5, alpha: 0.3 });
+    for (let k = 0; k < 40; k++) { ctx.fillStyle = `rgba(${60 + rnd() * 40},${40 + rnd() * 20},30,0.5)`; ctx.fillRect(rnd() * S, rnd() * S, 2 + rnd() * 10, 1 + rnd() * 3); } // chips
+    streaks(ctx, S, S, 20, 'rgba(60,30,20,A)', { alpha: 0.25 });
+    grain(ctx, S, S, 10);
+    tex.redBeam = toTexture(c);
+  }
+  { // dark structural steel
+    const S = 256;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#4a4d50'; ctx.fillRect(0, 0, S, S);
+    fbm(ctx, S, S, { base: 4, octaves: 5, alpha: 0.35 });
+    streaks(ctx, S, S, 24, 'rgba(70,40,20,A)', { alpha: 0.25 });
+    grain(ctx, S, S, 10);
+    tex.beam = toTexture(c);
+  }
+  { // grey ribbed cladding panels
+    const S = 512, ribs = 12;
+    const [c, ctx] = canvas(S);
+    for (let x = 0; x < S; x++) {
+      const k = (x / S) * ribs % 1;
+      const v = k < 0.12 ? 150 : k < 0.18 ? 112 : k > 0.88 ? 168 : 138;
+      ctx.fillStyle = `rgb(${v},${v + 4},${v + 8})`; ctx.fillRect(x, 0, 1, S);
+    }
+    fbm(ctx, S, S, { base: 4, octaves: 5, alpha: 0.25 });
+    streaks(ctx, S, S, 40, 'rgba(60,55,45,A)', { alpha: 0.22, width: [2, 6] });
+    for (let k = 0; k < 8; k++) blotWrap(ctx, S, S, rnd() * S, S * (0.75 + rnd() * 0.25), 40 + rnd() * 50, 'rgba(90,60,35,A)', 0.25);
+    grain(ctx, S, S, 10);
+    tex.panel = toTexture(c);
+  }
+  { // roll-up shutter
+    const S = 512;
+    const [c, ctx] = canvas(S);
+    for (let y = 0; y < S; y += 16) {
+      const g = ctx.createLinearGradient(0, y, 0, y + 16);
+      g.addColorStop(0, '#a9adb0'); g.addColorStop(0.5, '#8d9195'); g.addColorStop(1, '#5e6266');
+      ctx.fillStyle = g; ctx.fillRect(0, y, S, 16);
+    }
+    fbm(ctx, S, S, { base: 4, octaves: 4, alpha: 0.25 });
+    streaks(ctx, S, S, 30, 'rgba(70,50,30,A)', { alpha: 0.25 });
+    grain(ctx, S, S, 10);
+    tex.rollup = toTexture(c);
+  }
+  { // shipping container steel (tinted per colour by the material)
+    const S = 512, ribs = 10;
+    const [c, ctx] = canvas(S);
+    for (let x = 0; x < S; x++) {
+      const k = (x / S) * ribs % 1;
+      const v = k < 0.5 ? 205 - k * 60 : 175 + (k - 0.5) * 60;
+      ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(x, 0, 1, S);
+    }
+    fbm(ctx, S, S, { base: 4, octaves: 5, alpha: 0.25 });
+    for (let k = 0; k < 18; k++) blotWrap(ctx, S, S, rnd() * S, rnd() * S, 15 + rnd() * 50, 'rgba(110,60,30,A)', 0.35);
+    streaks(ctx, S, S, 30, 'rgba(80,50,30,A)', { alpha: 0.25 });
+    grain(ctx, S, S, 10);
+    tex.container = toTexture(c);
+  }
+  { // diamond floor plate
+    const S = 256;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#7b7e80'; ctx.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 16) for (let x = (y / 16) % 2 ? 8 : 0; x < S; x += 16) {
+      ctx.save(); ctx.translate(x + 8, y + 8); ctx.rotate(((y / 16) % 2 ? 1 : -1) * 0.78);
+      ctx.fillStyle = '#9a9da0'; ctx.fillRect(-6, -1.5, 12, 3); ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-6, 1.5, 12, 1.2); ctx.restore();
+    }
+    fbm(ctx, S, S, { base: 4, octaves: 4, alpha: 0.3 });
+    grain(ctx, S, S, 10);
+    tex.floorPlate = toTexture(c);
+  }
+  { // brown wooden crate with stencils
+    const S = 512;
+    const [c, ctx] = canvas(S);
+    planks(ctx, S, S, { count: 5, base: '#8a6a44', gap: 'rgba(30,20,10,0.8)', grainA: 0.16, nails: false });
+    ctx.strokeStyle = '#5c4329'; ctx.lineWidth = 34; ctx.strokeRect(17, 17, S - 34, S - 34);
+    ctx.save(); ctx.translate(S / 2, S / 2); ctx.rotate(-0.785); ctx.fillStyle = '#5c4329'; ctx.fillRect(-S * 0.7, -16, S * 1.4, 32); ctx.restore();
+    ctx.fillStyle = 'rgba(30,24,18,0.55)'; ctx.font = 'bold 54px "Courier New", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('FRAGILE', S / 2, S * 0.3); ctx.font = 'bold 34px "Courier New", monospace'; ctx.fillText('THIS SIDE UP', S / 2, S * 0.78);
+    fbm(ctx, S, S, { base: 4, octaves: 4, alpha: 0.3 });
+    grain(ctx, S, S, 12);
+    tex.woodCrate = toTexture(c);
+  }
+  { // canvas tarp
+    const S = 256;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#4f6a5a'; ctx.fillRect(0, 0, S, S);
+    ctx.globalAlpha = 0.15;
+    for (let y = 0; y < S; y += 2) { ctx.fillStyle = y % 4 ? '#000' : '#fff'; ctx.fillRect(0, y, S, 1); }
+    ctx.globalAlpha = 1;
+    fbm(ctx, S, S, { base: 3, octaves: 5, alpha: 0.4 });
+    grain(ctx, S, S, 10);
+    tex.tarp = toTexture(c);
+  }
+
+  { // overgrown field around the yard (seen beyond the walls)
+    const S = 512;
+    const [c, ctx] = canvas(S);
+    ctx.fillStyle = '#5d6a3c'; ctx.fillRect(0, 0, S, S);
+    fbm(ctx, S, S, { base: 3, octaves: 6, alpha: 0.3 });
+    for (let k = 0; k < 26; k++) blotWrap(ctx, S, S, rnd() * S, rnd() * S, 20 + rnd() * 70, 'rgba(110,92,62,A)', 0.25);
+    for (let k = 0; k < 3000; k++) {
+      ctx.fillStyle = `rgba(${60 + rnd() * 60},${80 + rnd() * 60},${30 + rnd() * 30},0.5)`;
+      ctx.fillRect(rnd() * S, rnd() * S, 1, 2 + rnd() * 3);
+    }
+    grain(ctx, S, S, 10);
+    tex.field = toTexture(c);
+  }
+  { // prefab Soviet apartment block: panel grid, windows, balconies
+    const W = 256, H = 512, cols = 4, rows = 9;
+    const [c, ctx] = canvas(W, H);
+    ctx.fillStyle = '#a6a49c'; ctx.fillRect(0, 0, W, H);
+    fbm(ctx, W, H, { base: 4, octaves: 5, alpha: 0.3 });
+    const cw = W / cols, rh = H / rows;
+    for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
+      const x = q * cw, y = r * rh;
+      ctx.strokeStyle = 'rgba(60,58,52,0.45)'; ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, rh - 1);
+      const lit = rnd();
+      ctx.fillStyle = lit < 0.08 ? '#5a5e60' : lit < 0.5 ? '#23272b' : '#2f3539';
+      ctx.fillRect(x + cw * 0.22, y + rh * 0.22, cw * 0.56, rh * 0.5);
+      ctx.fillStyle = 'rgba(200,205,210,0.15)'; ctx.fillRect(x + cw * 0.22, y + rh * 0.22, cw * 0.56, rh * 0.08);
+      if (q % 2 === 1) { // balcony slab and railing
+        ctx.fillStyle = '#8d8a82'; ctx.fillRect(x + cw * 0.08, y + rh * 0.68, cw * 0.84, rh * 0.22);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + cw * 0.08, y + rh * 0.9, cw * 0.84, rh * 0.05);
+      }
+    }
+    streaks(ctx, W, H, 40, 'rgba(60,55,45,A)', { alpha: 0.25, width: [2, 6] });
+    grain(ctx, W, H, 10);
+    tex.blockFacade = toTexture(c);
   }
 
   for (const [k, strength] of Object.entries(RELIEF)) {

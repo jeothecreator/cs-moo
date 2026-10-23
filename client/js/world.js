@@ -3,17 +3,23 @@
 //   trenches — overcast front line: plank revetments, sandbag parapets, wire, mud, bunkers
 //   seoul    — a street block at dusk: storefronts, apartment storeys, neon, trucks, wires
 //   rooftop  — a green-coated Seoul rooftop at golden hour above the city
+//   cache    — a compiled Hammer map (tools/vmf2map.mjs): its own geometry, plus the Pripyat skyline
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { MAP } from '/shared/map.js';
 import { makeTextures, textTexture, signTexture, vendingTexture, normalMapFor } from './textures.js';
+import { mapScene, preloadMap } from './assets.js';
 
 export const IMPACT_COLORS = {
   earth: 0x5a4632, sandbag: 0x8a7a58, bunker: 0x8a877f, crate: 0x6a6440, wood: 0x7b6c5a, door: 0x6a5640,
   metal: 0x6e5a48, facade: 0xb8ab98, shop: 0x55585c, brick: 0x8b4a32, concrete: 0xa7a39b, vending: 0x3a6f9c,
   car: 0xd8dade, parapet: 0xc7c2b8, steel: 0xb9bdc0, barricade: 0x8a7a58, ground: 0x4b3c2c,
+  tile: 0xd8d5cc, panel: 0xa9adb0, roof: 0x8c9196, plaster: 0xd2cec4, floorPlate: 0x9a9da0, rust: 0x7a4a2c,
+  beam: 0x5a5d60, redBeam: 0x9b2a1f, tarp: 0x4f6a5a, rollup: 0x9a9ea2, glass: 0xc8d8e0,
+  containerRed: 0xa53a2a, containerBlue: 0x36608c, black: 0x202020, dirt: 0x6a5a44, asphalt: 0x4a4a4c,
+  trimDark: 0x8c8982, ceiling: 0x8e9398, caution: 0xd8b030,
 };
 
 let rseed = 7;
@@ -37,6 +43,40 @@ const THEMES = {
     fog: [0x9d8f98, 140, 700], exposure: 1.08, sunColor: 0xffb26e, sunI: 3.8, hemi: [0x86a2d8, 0x4a3a30, 0.95], env: 0.85,
     ground: { tex: 'rooftop', tile: 10, rough: 0.55, onlyBounds: true },
   },
+  cache: { // sun direction and colour come from the map's light_environment
+    sun: [57, 200], sky: { turbidity: 3.2, rayleigh: 1.5, mie: 0.005, mieG: 0.82, clouds: 0.5, density: 0.45, scale: 0.1 },
+    fog: [0xb3c1cd, 140, 900], exposure: 1.0, sunColor: 0xffe2c0, sunI: 3.4, hemi: [0xbccfe4, 0x6b604e, 1.0], env: 0.85,
+    ground: { tex: 'field', tile: 22, rough: 0.95, y: -1.6, size: 1800 },
+  },
+};
+
+// Compiled-map surface families → procedural materials. `rep` = texture repeats per Hammer tile
+// (512 texels at scale 0.25 ≈ 3.25 m), or [u, v].
+const FAMILY = {
+  concrete: { tex: 'concrete', rep: 1.1 },
+  facade: { tex: 'blockFacade', rep: [0.27, 0.13], color: 0xe2ddd2 }, // apartment-block / warehouse fronts: ~3 m bays, 2.8 m storeys
+  brick: { tex: 'brick', rep: 1.1 },
+  plaster: { tex: 'plaster', rep: 1.1 },
+  tile: { tex: 'tile', rep: 1, rough: 0.75 },
+  dirt: { tex: 'gravel', rep: 1, rough: 1 },
+  asphalt: { tex: 'blacktop', rep: 1, rough: 0.85 },
+  panel: { tex: 'panel', rep: 1, rough: 0.55, metal: 0.35 },
+  roof: { tex: 'panel', rep: 1, rough: 0.6, metal: 0.4, color: 0x9aa0a6 },
+  rollup: { tex: 'rollup', rep: 1, rough: 0.5, metal: 0.45 },
+  floorPlate: { tex: 'floorPlate', rep: 2, rough: 0.45, metal: 0.55 },
+  rust: { tex: 'metal', rep: 1.3, rough: 0.7, metal: 0.4 },
+  beam: { tex: 'beam', rep: 1, rough: 0.55, metal: 0.5 },
+  redBeam: { tex: 'redBeam', rep: 1, rough: 0.5, metal: 0.3 },
+  containerRed: { tex: 'container', rep: 1, color: 0xb0402e, rough: 0.6, metal: 0.35 },
+  containerBlue: { tex: 'container', rep: 1, color: 0x3d6896, rough: 0.6, metal: 0.35 },
+  wood: { tex: 'wood', rep: 1.4, rough: 0.9 },
+  crate: { tex: 'woodCrate', rep: 1, rough: 0.85 },
+  tarp: { tex: 'tarp', rep: 1, rough: 0.95 },
+  trimDark: { tex: 'concrete', rep: 1.1, color: 0x8c8982 },
+  ceiling: { tex: 'panel', rep: 1, rough: 0.6, metal: 0.3, color: 0x8e9398 },
+  caution: { tex: 'caution', rep: 1, rough: 0.7 },
+  black: { color: 0x060606, rough: 1 },
+  glass: { glass: true },
 };
 
 // Surface presets: texture, metres per tile (su × sv) or `fit` (whole tiles across a face).
@@ -58,6 +98,7 @@ const SURF = {
   cardboard: { tex: 'cardboard', fit: 0.9 },
   panel: { tex: 'steel', su: 2, sv: 2, color: 0x7d98b5, rough: 0.5, metal: 0.3 },
   pallet: { tex: 'wood', fit: 1.2 },
+  sovietBlock: { tex: 'blockFacade', su: 12, sv: 25.2, rough: 0.9 },
 };
 
 // How each collision material looks per theme: vertical bands of surfaces, a top surface, and
@@ -317,7 +358,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   const B = MAP.bounds;
 
   // Sky, fog and image-based lighting from that same sky, so ambient colour matches the horizon.
-  const sunDir = sunVector(T.sun);
+  const sunDir = MAP.sun ? new THREE.Vector3(...MAP.sun.dir).normalize() : sunVector(T.sun);
   const sky = makeSky(sunDir, T.sky);
   scene.add(sky);
   targetScene.background = null;
@@ -336,9 +377,11 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
 
   const hemi = new THREE.HemisphereLight(T.hemi[0], T.hemi[1], T.hemi[2]);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(T.sunColor, T.sunI);
-  sun.position.copy(sunDir).multiplyScalar(220);
-  sun.target.position.set(0, 0, 0);
+  // A compiled map's own light colour, softened: Source bakes it into lightmaps, we light in real time.
+  const sunColor = MAP.sun ? new THREE.Color().setRGB(...MAP.sun.color, THREE.SRGBColorSpace).lerp(new THREE.Color(T.sunColor), 0.5) : T.sunColor;
+  const sun = new THREE.DirectionalLight(sunColor, T.sunI);
+  sun.target.position.set((B.minX + B.maxX) / 2, 0, (B.minZ + B.maxZ) / 2);
+  sun.position.copy(sunDir).multiplyScalar(220).add(sun.target.position);
   scene.add(sun, sun.target);
   if (shadows) {
     const ext = Math.max(B.maxX - B.minX, B.maxZ - B.minZ) / 2 + 12;
@@ -368,7 +411,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   };
 
   // Collision boxes → banded surfaces (or a custom model for vehicles, machines, rooftop units).
-  const looks = LOOK[themeName];
+  const looks = LOOK[themeName] || {};
   const surfaces = new Surfaces();
   const batch = new Batch();
   const modelBoxes = [];
@@ -378,7 +421,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
     if (Math.abs(cx) < 6 && Math.abs(cz) < 6) return false;
     return n[0] * cx + n[2] * cz > 0;
   };
-  for (const b of MAP.boxes) {
+  for (const b of MAP.compiled ? [] : MAP.boxes) {
     const look = looks[b.mat] || { bands: [[99, 'concrete']], top: 'concrete' };
     if (look.model) { modelBoxes.push([look.model, b]); continue; }
     surfaces.box(b, look, { innerTest: look.inner ? centerRoomTest : null });
@@ -387,7 +430,32 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   const ctx = { scene, tex, batch, surfaces, updaters, surfMat, renderer };
   if (themeName === 'trenches') dressTrenches(ctx);
   else if (themeName === 'seoul') dressSeoul(ctx, modelBoxes);
-  else dressRooftop(ctx, modelBoxes);
+  else if (themeName === 'rooftop') dressRooftop(ctx, modelBoxes);
+  else if (themeName === 'cache') dressCache(ctx);
+
+  // Compiled maps bring their own geometry (loaded with the other assets; attached late if not yet in).
+  let disposed = false;
+  const mapMeshes = [];
+  if (MAP.compiled) {
+    const famMat = familyMaterials(tex);
+    const attach = (src) => {
+      if (!src || disposed) return;
+      const root = src.clone();
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        const m = famMat(o.material.name);
+        o.material = m;
+        o.castShadow = !m.transparent;
+        o.receiveShadow = true;
+        o.userData.shared = true; // geometry belongs to the cached glTF
+        mapMeshes.push(o);
+      });
+      scene.add(root);
+      if (shadows) renderer.shadowMap.needsUpdate = true;
+    };
+    const ready = mapScene(MAP.name);
+    if (ready) attach(ready); else preloadMap(MAP.name).then(attach);
+  }
 
   const collidables = surfaces.meshes((key) => surfMat(key));
   for (const m of collidables) scene.add(m);
@@ -397,10 +465,11 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
   const gp = T.ground;
   const groundTex = tex[gp.tex].clone();
   groundTex.needsUpdate = true;
-  const gw = gp.onlyBounds ? B.maxX - B.minX + 4 : 900, gd = gp.onlyBounds ? B.maxZ - B.minZ + 4 : 900;
+  const gw = gp.onlyBounds ? B.maxX - B.minX + 4 : gp.size || 900, gd = gp.onlyBounds ? B.maxZ - B.minZ + 4 : gp.size || 900;
   groundTex.repeat.set(gw / gp.tile, gd / gp.tile);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(gw, gd), stdMat({ map: groundTex, normalMap: normalMapFor(groundTex), roughness: gp.rough }));
   ground.rotation.x = -Math.PI / 2;
+  ground.position.y = gp.y ?? 0;
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -408,7 +477,7 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
 
   return {
     tex,
-    collidables,
+    collidables: MAP.compiled ? mapMeshes : collidables,
     sun,
     sky,
     hemi,
@@ -417,10 +486,136 @@ export function buildWorld(targetScene, renderer, { shadows = true } = {}) {
     update(dt) { for (const u of updaters) u(dt); },
     refreshShadows() { if (shadows) renderer.shadowMap.needsUpdate = true; },
     dispose() {
+      disposed = true;
       targetScene.remove(scene);
-      scene.traverse((o) => { o.geometry?.dispose?.(); });
+      scene.traverse((o) => { if (!o.userData.shared) o.geometry?.dispose?.(); });
     },
   };
+}
+
+// ─── Compiled maps ────────────────────────────────────────────
+function familyMaterials(tex) {
+  const cache = new Map();
+  return (fam) => {
+    if (cache.has(fam)) return cache.get(fam);
+    const f = FAMILY[fam] || FAMILY.concrete;
+    let m;
+    if (f.glass) {
+      m = new THREE.MeshStandardMaterial({
+        color: 0x9fb6c2, roughness: 0.06, metalness: 0.2, transparent: true, opacity: 0.3, depthWrite: false, envMapIntensity: 1.6,
+      });
+    } else if (!f.tex) {
+      m = new THREE.MeshStandardMaterial({ color: f.color, roughness: f.rough ?? 1 });
+    } else {
+      let map = tex[f.tex];
+      const [ru, rv] = [].concat(f.rep, f.rep);
+      if (ru !== 1 || rv !== 1) { map = map.clone(); map.repeat.set(ru, rv); map.needsUpdate = true; }
+      const opts = { map, roughness: f.rough ?? 0.9, metalness: f.metal ?? 0 };
+      if (f.color) opts.color = f.color;
+      m = stdMat(opts);
+    }
+    m.name = fam;
+    cache.set(fam, m);
+    return m;
+  };
+}
+
+/** Everything outside the yard: treeline, the Pripyat tower blocks, the Ferris wheel and the plant. */
+function dressCache({ scene, tex, batch, surfaces }) {
+  const base = -1.6;
+  const B = MAP.bounds;
+  const hole = { minX: B.minX - 30, maxX: B.maxX + 40, minZ: B.minZ - 25, maxZ: B.maxZ + 40 };
+  const outside = (x, z, m) => x < hole.minX - m || x > hole.maxX + m || z < hole.minZ - m || z > hole.maxZ + m;
+  const cxm = (B.minX + B.maxX) / 2, czm = (B.minZ + B.maxZ) / 2;
+
+  // Deciduous treeline: trunks + layered canopies, instanced.
+  const crown = new THREE.IcosahedronGeometry(1, 1);
+  const trunk = new THREE.CylinderGeometry(0.18, 0.28, 1, 6);
+  const leafMats = [0x3f5a2c, 0x4d6a33, 0x5b6f38, 0x36502a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.95, flatShading: true }));
+  const barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3f34, roughness: 1 });
+  const trees = [];
+  for (let k = 0; k < 2400 && trees.length < 700; k++) {
+    const a = rnd() * Math.PI * 2, d = rr(120, 260);
+    const x = cxm + Math.cos(a) * d * 1.1, z = czm + Math.sin(a) * d;
+    if (!outside(x, z, 6)) continue;
+    trees.push([x, z, rr(7, 15)]);
+  }
+  const trunks = new THREE.InstancedMesh(trunk, barkMat, trees.length);
+  const crowns = leafMats.map((m) => new THREE.InstancedMesh(crown, m, trees.length * 2));
+  const counts = leafMats.map(() => 0);
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  trees.forEach(([x, z, h], i) => {
+    mtx.compose(v.set(x, base + h * 0.3, z), q.identity(), sc.set(1, h * 0.6, 1));
+    trunks.setMatrixAt(i, mtx);
+    for (let j = 0; j < 2; j++) {
+      const c = Math.floor(rnd() * leafMats.length);
+      const r = h * rr(0.24, 0.34);
+      q.setFromEuler(new THREE.Euler(0, rnd() * 6.28, 0));
+      mtx.compose(v.set(x + rr(-1, 1), base + h * (0.62 + j * 0.2), z + rr(-1, 1)), q, sc.set(r * rr(0.9, 1.2), r * rr(0.8, 1.1), r * rr(0.9, 1.2)));
+      crowns[c].setMatrixAt(counts[c]++, mtx);
+    }
+  });
+  crowns.forEach((m, i) => { m.count = counts[i]; });
+  for (const m of [trunks, ...crowns]) { m.castShadow = false; m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m); }
+
+  // Prefab tower blocks in rows, as in Pripyat: 9 and 16 storeys.
+  const look = { bands: [[999, 'sovietBlock']], top: 'slab' };
+  for (let k = 0, placed = 0; k < 400 && placed < 46; k++) {
+    const a = rnd() * Math.PI * 2, d = rr(270, 430);
+    const x = cxm + Math.cos(a) * d, z = czm + Math.sin(a) * d;
+    const tall = rnd() < 0.3, long = rr(36, 72), deep = 12, h = (tall ? 16 : 9) * 2.8;
+    const alongX = Math.abs(Math.cos(a)) < 0.7; // face the yard
+    const w = alongX ? long : deep, dd = alongX ? deep : long;
+    surfaces.box({ min: [x - w / 2, base, z - dd / 2], max: [x + w / 2, base + h, z + dd / 2] }, look);
+    placed++;
+  }
+
+  // The Ferris wheel.
+  const steel = new THREE.MeshStandardMaterial({ color: 0x8b8f92, roughness: 0.6, metalness: 0.5 });
+  const yellow = new THREE.MeshStandardMaterial({ color: 0xd6b23a, roughness: 0.6, metalness: 0.2 });
+  const wheel = new THREE.Group();
+  const R = 13;
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.22, 6, 64), steel));
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R * 0.96, 0.12, 6, 64), steel));
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const spoke = new THREE.Mesh(G.cyl6, steel);
+    spoke.scale.set(0.12, R, 0.12); spoke.position.set(Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0); spoke.rotation.z = a - Math.PI / 2;
+    wheel.add(spoke);
+    const cab = new THREE.Mesh(G.cyl, yellow);
+    cab.scale.set(1.5, 1.6, 1.5); cab.position.set(Math.cos(a) * R, Math.sin(a) * R - 1.1, 0);
+    wheel.add(cab);
+  }
+  for (const s of [-1, 1]) for (const lean of [-0.38, 0.38]) {
+    const leg = new THREE.Mesh(G.cyl6, steel);
+    leg.scale.set(0.35, R + 3, 0.35); leg.position.set(Math.sin(lean) * (R + 3) / 2, -(R + 1) / 2, s * 1.2); leg.rotation.z = lean;
+    wheel.add(leg);
+  }
+  wheel.position.set(cxm - 150, base + R + 2.4, czm + 210);
+  wheel.rotation.y = 0.6;
+  scene.add(wheel);
+
+  // The power plant on the horizon: reactor halls and the striped ventilation stack.
+  const hall = new THREE.MeshStandardMaterial({ map: tex.blockFacade, color: 0xe0ddd6, roughness: 0.9 });
+  const plant = new THREE.Group();
+  const halls = [[0, 0, 160, 34, 60], [-40, 50, 70, 70, 45], [55, 40, 50, 46, 40]];
+  for (const [x, z, w, h, d] of halls) {
+    const m = new THREE.Mesh(G.box, hall);
+    m.scale.set(w, h, d); m.position.set(x, h / 2, z); plant.add(m);
+  }
+  const stripes = document.createElement('canvas');
+  stripes.width = 8; stripes.height = 128;
+  const sctx = stripes.getContext('2d');
+  for (let i = 0; i < 8; i++) { sctx.fillStyle = i % 2 ? '#e8e4dc' : '#b23a2c'; sctx.fillRect(0, i * 16, 8, 16); }
+  const stripeTex = new THREE.CanvasTexture(stripes);
+  stripeTex.colorSpace = THREE.SRGBColorSpace;
+  const stack = new THREE.Mesh(new THREE.CylinderGeometry(3, 5.5, 150, 16, 1, true), new THREE.MeshStandardMaterial({ map: stripeTex, roughness: 0.8 }));
+  stack.position.set(-40, 75, 50);
+  plant.add(stack);
+  plant.position.set(cxm + 360, base, czm - 520);
+  plant.rotation.y = -0.4;
+  scene.add(plant);
+  for (const o of [wheel, plant]) o.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = true; } });
 }
 
 // ─── Trenches ─────────────────────────────────────────────────

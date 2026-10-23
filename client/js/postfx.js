@@ -157,7 +157,18 @@ export class PostFX {
     this.ao = new GTAOPass(scene, camera, size.x, size.y);
     this.ao.output = GTAOPass.OUTPUT.Default;
     this.ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 0.4, scale: 1.1, samples: 16, screenSpaceRadius: false });
-    composer.addPass(this.ao);
+    // The AO prepass only skips points and lines; name tags, glass and smoke would otherwise be
+    // drawn as solid occluders and leave dark rectangles behind them.
+    const ao = this.ao;
+    ao._overrideVisibility = function hideNonOccluders() {
+      const cache = this._visibilityCache;
+      this.scene.traverse((o) => {
+        if (!o.visible) return;
+        const transparent = o.material && [].concat(o.material).every((m) => m.transparent);
+        if (o.isPoints || o.isLine || o.isLine2 || o.isSprite || (o.isMesh && transparent)) { o.visible = false; cache.push(o); }
+      });
+    };
+    composer.addPass(ao);
     this.sanitize = new ShaderPass(SanitizeShader);
     composer.addPass(this.sanitize);
 

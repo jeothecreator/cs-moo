@@ -443,6 +443,7 @@ export class Obby {
 
   mover(w, d, a, b, period, mat) {
     const p = this.plat(a[0], a[1], a[2], w, d, mat, { h: 0.8 });
+    p.box.moving = true; // kept out of the spatial index's grid
     this.movers.push({ ...p, a, b, period, phase: Math.random() * period });
   }
 
@@ -617,8 +618,7 @@ export class Obby {
   }
 
   nearbyBoxes() {
-    const out = (this.near ??= []);
-    out.length = 0;
+    const out = []; // fresh each step: the collision index is keyed on the array
     const cx = Math.floor(this.body.x), cz = Math.floor(this.body.z);
     for (let dx = -3; dx <= 3; dx++) {
       for (let dz = -3; dz <= 3; dz++) {
@@ -629,7 +629,7 @@ export class Obby {
     return out;
   }
 
-  /** Block types directly under the cow's feet in a custom course. */
+  /** Block types directly under the player's feet in a custom course. */
   underfoot() {
     const b = this.body;
     if (!b.onGround) return [];

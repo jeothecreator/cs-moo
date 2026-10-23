@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Match } from './match.js';
 import { createStore } from './store.js';
+import { precompressed, warm } from './compress.js';
 import { validateObbyBlocks, OBBY_LIMITS, OBBY_MAX_DISTANCE } from '../shared/obby.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,10 +15,13 @@ const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || path.join(root, 'server', 'data');
 
 const app = express();
-app.use(express.static(path.join(root, 'client')));
-app.use('/shared', express.static(path.join(root, 'shared')));
-app.use('/lib/three', express.static(path.join(root, 'node_modules/three/build')));
-app.use('/lib/three-addons', express.static(path.join(root, 'node_modules/three/examples/jsm')));
+const STATIC = { '/': 'client', '/shared': 'shared', '/lib/three': 'node_modules/three/build', '/lib/three-addons': 'node_modules/three/examples/jsm' };
+for (const [mount, dir] of Object.entries(STATIC)) {
+  app.use(mount, precompressed(path.join(root, dir)), express.static(path.join(root, dir)));
+}
+warm([
+  'shared/maps/de_cache.js', 'client/assets/maps/de_cache.glb', 'node_modules/three/build/three.module.js', 'node_modules/three/build/three.core.js',
+].map((f) => path.join(root, f)));
 
 const rooms = new Map();
 const CODE_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';

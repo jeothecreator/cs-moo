@@ -31,6 +31,19 @@ export function preloadAssets() {
 
 export const assetsReady = () => !!loaded.soldier;
 
+// Compiled maps (tools/vmf2map.mjs): render geometry, one mesh per surface family.
+const mapScenes = {};
+export function preloadMap(name) {
+  return (mapScenes[name] ||= new GLTFLoader().loadAsync(`/assets/maps/${name}.glb`)
+    .then((gltf) => (mapScenes[name] = gltf.scene))
+    .catch((e) => { console.warn(`map ${name} failed to load`, e); delete mapScenes[name]; return null; }));
+}
+/** The loaded map scene (null until preloadMap resolves). */
+export function mapScene(name) {
+  const s = mapScenes[name];
+  return s && s.isObject3D ? s : null;
+}
+
 function prepare(gltf) {
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;

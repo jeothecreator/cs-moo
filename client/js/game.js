@@ -4,7 +4,9 @@ import { WEAPONS, RECOIL, INTERP_DELAY, UTIL, TEAMS, ROUND, HUMAN_SPREAD, RECOIL
 import { MAP, siteAt, setActiveMap, instanceMap } from '/shared/map.js';
 import {
   newBody, stepBody, eyeHeight, playerHeight, raycastWorld, rayPlayer, shotDirection, dirFromAngles, lineClear,
+  blockSpot, blockFits,
 } from '/shared/physics.js';
+import { addBrush, removeBrush } from '/shared/brushes.js';
 import { computeSpread } from '/shared/combat.js';
 import { buildWorld, IMPACT_COLORS } from './world.js';
 import { SoldierModel } from './soldier.js';
@@ -698,20 +700,13 @@ export class Game {
     const dir = dirFromAngles(this.yaw, this.pitch);
     const hit = raycastWorld(eye, dir, BLOCKS.REACH);
     if (!hit) return null;
-    const n = hit.normal;
-    if (!n || (n[0] === 0 && n[1] === 0 && n[2] === 0)) return null;
-    const p = [eye[0] + dir[0] * hit.t, eye[1] + dir[1] * hit.t, eye[2] + dir[2] * hit.t];
-    const cell = [Math.floor(p[0] + n[0] * 0.5), Math.floor(p[1] + n[1] * 0.5), Math.floor(p[2] + n[2] * 0.5)];
-    return { cell, box: hit.box, valid: this.canPlaceAt(cell) };
+    // Barricades snap to the metre grid in x/z and settle on whatever is below (floors aren't on the grid).
+    const cell = blockSpot(eye, dir, BLOCKS.REACH);
+    return { cell, box: hit.box, valid: !!cell && this.canPlaceAt(cell) };
   }
 
   canPlaceAt([x, y, z]) {
-    const B = MAP.bounds;
-    if (y < 0 || y > BLOCKS.MAX_HEIGHT || x < B.minX || x + 1 > B.maxX || z < B.minZ || z + 1 > B.maxZ) return false;
-    const E = 0.01;
-    for (const b of MAP.boxes) {
-      if (x + 1 - E > b.min[0] && x + E < b.max[0] && y + 1 - E > b.min[1] && y + E < b.max[1] && z + 1 - E > b.min[2] && z + E < b.max[2]) return false;
-    }
+    if (!blockFits(x, y, z)) return false;
     const bodies = [[this.body.x, this.body.y, this.body.z, this.body.crouch]];
     for (const e of this.entities.values()) if (e.alive && e.pos) bodies.push([e.pos[0], e.pos[1], e.pos[2], e.crouch]);
     for (const [bx, by, bz, c] of bodies) {
@@ -741,8 +736,8 @@ export class Game {
     }
     const show = this.mode === 'playing' && this.me.alive && this.me.act === 'barricade' && this.me.blocks > 0;
     const target = show ? this.blockTarget() : null;
-    this.blockGhost.visible = !!target;
-    if (!target) return;
+    this.blockGhost.visible = !!target?.cell;
+    if (!target?.cell) return;
     this.blockGhost.position.set(target.cell[0] + 0.5, target.cell[1] + 0.5, target.cell[2] + 0.5);
     this.blockGhost.material.color.setHex(target.valid ? 0x8fd16a : 0xe5484d);
   }
@@ -750,7 +745,7 @@ export class Game {
   addBlock(id, c, owner, fresh = false) {
     if (this.blocks.has(id)) return;
     const box = { min: [c[0], c[1], c[2]], max: [c[0] + 1, c[1] + 1, c[2] + 1], mat: 'barricade', dyn: true, id, owner };
-    MAP.boxes.push(box);
+    addBrush(MAP.boxes, box);
     const mesh = new THREE.Mesh(this.blockGeo, this.blockMats);
     mesh.position.set(c[0] + 0.5, c[1] + 0.5, c[2] + 0.5);
     mesh.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
@@ -769,8 +764,7 @@ export class Game {
   removeBlock(id, fx = false) {
     const b = this.blocks.get(id);
     if (!b) return;
-    const i = MAP.boxes.indexOf(b.box);
-    if (i >= 0) MAP.boxes.splice(i, 1);
+    removeBrush(MAP.boxes, b.box);
     this.scene.remove(b.mesh);
     this.blocks.delete(id);
     if (fx) {
@@ -1256,7 +1250,7 @@ export class Game {
       const dashing = performance.now() / 1000 < (this.dashUntil || 0);
       if (dashing) { wx = 0; wz = 0; }
       const vyBefore = this.body.vy;
-      stepBody(this.body, { wx, wz, jump: jump && !dashing, walk, crouch: crouch && !frozen ? true : crouch, speedMult, slick: slick || dashing, slow, noCap: dashing }, dt);
+      stepBody(this.body, { wx, wz, jump: jump && !dashing, walk, crouch: crouch && !frozen ? true : crouch, speedMult, slick: slick || dashing, slow, noCap: dashing, pitch: this.pitch }, dt);
       if (this.body.onGround && performance.now() / 1000 > (this.dashUntil || 0)) this.airDashUsed = false;
       this.checkStomp(vyBefore);
       if (this.body.jumped) { this.body.jumped = false; this.jumpQueued = 0; }
